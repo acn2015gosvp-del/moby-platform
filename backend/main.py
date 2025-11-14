@@ -8,9 +8,11 @@ app = FastAPI(
     version="1.0.0",
 )
 
+# Routers
 app.include_router(alerts_router, prefix="/alerts", tags=["Alerts"])
 app.include_router(sensors_router, prefix="/sensors", tags=["Sensors"])
 
+
 @app.get("/")
 def root():
-    return {"status": "ok", "msg": "MOBY Backend Running"}
+    return {"status": "ok", "message": "MOBY backend running"}
