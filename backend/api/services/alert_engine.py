@@ -1,209 +1,227 @@
 """
-알림 평가 엔진 모듈
+알림 엔진 서비스 모듈 (최종 리팩토링 버전)
 
-오케스트레이터 역할을 수행하며, 이상 탐지 벡터 평가와 LLM 요약 생성 등을 조율합니다.
+역할:
+- anomaly_vector_service를 이용해 벡터 기반 이상 여부 및 심각도 평가
+- alerts_summary 서비스를 통해 LLM 요약 생성 (옵션)
+- 프론트/백엔드에서 공통으로 사용하는 알람 페이로드(dict) 생성
+
+주의:
+- 이 모듈은 "알람 평가 및 페이로드 생성"까지만 담당합니다.
+- 실제 슬랙/이메일/WebSocket 전송은 notifier 등 상위 레이어에서 처리하세요.
 """
-from typing import Any, Dict, Optional
-from schemas.alert_schema import AlertResponse
-from services.alerts_summary import generate_alert_summary
-from services.anomaly_vector_service import evaluate_anomaly_vector_with_severity
-from schemas.models.core.logger import logger
+
+from __future__ import annotations
+
+import logging
+from datetime import datetime
+from typing import Any, Dict, Optional, Tuple
+
+from .anomaly_vector_service import (
+    evaluate_anomaly_vector,
+    evaluate_anomaly_vector_with_severity,
+)
+from .alerts_summary import generate_alert_summary
+
+logger = logging.getLogger(__name__)
 
 
-# 기본 임계값 설정 (환경 변수나 설정 파일에서 가져올 수 있음)
-DEFAULT_WARNING_THRESHOLD = 0.5
-DEFAULT_CRITICAL_THRESHOLD = 0.7
+# -------------------------------------------------------------------
+# 내부 유틸
+# -------------------------------------------------------------------
 
 
-def process_alert(alert_data: Dict[str, Any]) -> Dict[str, Any]:
+def _now_iso() -> str:
+    """UTC 기준 ISO8601 타임스탬프 문자열을 반환합니다."""
+    return datetime.utcnow().isoformat()
+
+
+def _normalize_level(severity: str) -> str:
     """
-    알림 데이터를 처리하여 최종 알림 딕셔너리를 생성합니다.
-    
-    오케스트레이터 역할:
-    1. 이상 벡터 norm 계산 및 심각도 판단
-    2. 이상이 감지되면 LLM 요약 생성
-    3. 최종 알림 딕셔너리 반환
-    
-    Args:
-        alert_data: 처리할 알림 데이터 (dict)
-            - vector: List[float] - 이상 탐지 벡터 (선택적)
-            - warning_threshold: float - 경고 임계값 (선택적, 기본값: 0.5)
-            - critical_threshold: float - 심각 임계값 (선택적, 기본값: 0.7)
-            - 기타 알림 관련 메타데이터
-            
-    Returns:
-        최종 알림 딕셔너리:
+    severity 문자열을 UI에서 쓰기 쉬운 level로 매핑합니다.
+
+    severity:
+        - "normal"   → "info"
+        - "warning"  → "warning"
+        - "critical" → "critical"
+    """
+    mapping = {
+        "normal": "info",
+        "warning": "warning",
+        "critical": "critical",
+    }
+    return mapping.get(severity, "info")
+
+
+# -------------------------------------------------------------------
+# 공개 엔트리 포인트 (기존 호환용)
+# -------------------------------------------------------------------
+
+
+def evaluate_alert(alert_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """
+    기존 코드와의 호환을 위한 엔트리 포인트.
+
+    입력된 alert_data(dict)를 기반으로:
+    - 벡터(norm) 계산
+    - threshold/경고/심각도 평가
+    - 이상이 아닐 경우 None 반환
+    - 이상일 경우 통합 알람 페이로드(dict) 반환
+
+    실제 전송은 상위 레이어에서 처리합니다.
+    """
+    return process_alert(alert_data)
+
+
+# -------------------------------------------------------------------
+# 핵심 처리 함수
+# -------------------------------------------------------------------
+
+
+def process_alert(alert_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """
+    알람 평가 및 페이로드 생성의 핵심 로직.
+
+    alert_data 예시(필요시 확장 가능):
+
         {
-            "level": str,           # "normal", "warning", "critical"
-            "severity": str,        # "normal", "warning", "critical" (level과 동일)
-            "is_anomaly": bool,     # 이상 여부
-            "norm": float,          # 계산된 벡터 norm 값 (벡터가 있는 경우)
-            "summary": str | None,  # LLM 요약 (이상이 있는 경우에만)
-            "message": str,         # 알림 메시지
-            ... 기타 alert_data의 필드들
-        }
-        
-    Example:
-        >>> alert_data = {
-        ...     "vector": [0.4, 0.33],
-        ...     "sensor_id": "temp_01",
-        ...     "timestamp": "2025-01-01T10:00:00Z"
-        ... }
-        >>> result = process_alert(alert_data)
-        >>> print(result["severity"])  # "warning" or "normal"
-    """
-    try:
-        # 1. 벡터 추출 및 이상 탐지 평가
-        vector = alert_data.get("vector")
-        norm = None
-        is_anomaly = False
-        severity = "normal"
-        level = "normal"
-        
-        if vector and isinstance(vector, list) and len(vector) > 0:
-            # 벡터가 있는 경우 norm 계산 및 심각도 판단
-            try:
-                warning_threshold = alert_data.get(
-                    "warning_threshold", 
-                    DEFAULT_WARNING_THRESHOLD
-                )
-                critical_threshold = alert_data.get(
-                    "critical_threshold", 
-                    DEFAULT_CRITICAL_THRESHOLD
-                )
-                
-                norm, is_anomaly, severity = evaluate_anomaly_vector_with_severity(
-                    vector=vector,
-                    warning_threshold=float(warning_threshold),
-                    critical_threshold=float(critical_threshold)
-                )
-                level = severity
-                
-                logger.info(
-                    f"Vector anomaly evaluated: norm={norm:.4f}, "
-                    f"severity={severity}, is_anomaly={is_anomaly}"
-                )
-            except ValueError as e:
-                logger.error(f"Invalid vector or threshold values: {e}")
-                severity = "normal"
-                level = "normal"
-            except Exception as e:
-                logger.error(f"Error evaluating vector anomaly: {e}")
-                severity = "normal"
-                level = "normal"
-        else:
-            # 벡터가 없는 경우 기존 anomaly_score나 다른 방식 사용 가능
-            anomaly_score = alert_data.get("anomaly_score")
-            if anomaly_score is not None:
-                # 간단한 threshold 기반 판단 (벡터가 없는 경우)
-                if anomaly_score > 0.8:
-                    severity = "critical"
-                    level = "critical"
-                    is_anomaly = True
-                elif anomaly_score > 0.5:
-                    severity = "warning"
-                    level = "warning"
-                    is_anomaly = True
-                else:
-                    severity = "normal"
-                    level = "normal"
-                    is_anomaly = False
-                logger.info(
-                    f"Anomaly score evaluated: score={anomaly_score}, "
-                    f"severity={severity}"
-                )
-        
-        # 2. 이상이 감지된 경우에만 LLM 요약 생성
-        summary = None
-        if severity != "normal" and is_anomaly:
-            try:
-                # alert_data에 평가 결과 추가
-                enhanced_alert_data = {
-                    **alert_data,
-                    "norm": norm,
-                    "severity": severity,
-                    "is_anomaly": is_anomaly
-                }
-                summary = generate_alert_summary(enhanced_alert_data)
-                
-                if summary:
-                    logger.info(f"LLM summary generated for {severity} alert")
-                else:
-                    logger.warning("LLM summary generation returned None")
-            except Exception as e:
-                logger.error(f"Error generating LLM summary: {e}")
-                summary = None
-        
-        # 3. 메시지 생성
-        if severity == "critical":
-            message = "Critical anomaly detected"
-        elif severity == "warning":
-            message = "Warning: Anomaly detected"
-        else:
-            message = "Normal operation"
-        
-        # 4. 최종 알림 딕셔너리 구성
-        result = {
-            "level": level,
-            "severity": severity,
-            "is_anomaly": is_anomaly,
-            "message": message,
-            "summary": summary,
-            **{k: v for k, v in alert_data.items() 
-               if k not in ["vector", "warning_threshold", "critical_threshold"]}
-        }
-        
-        # norm이 계산된 경우 추가
-        if norm is not None:
-            result["norm"] = norm
-        
-        return result
-        
-    except Exception as e:
-        logger.error(f"Error processing alert: {e}")
-        # 에러 발생 시 기본값 반환
-        return {
-            "level": "normal",
-            "severity": "normal",
-            "is_anomaly": False,
-            "message": f"Error processing alert: {str(e)}",
-            "summary": None,
-            **{k: v for k, v in alert_data.items() 
-               if k not in ["vector", "warning_threshold", "critical_threshold"]}
+            "sensor_id": "motor_01",
+            "source": "anomaly-worker",
+            "ts": "2025-11-15T03:10:00Z",
+
+            # 벡터 및 임계값
+            "vector": [0.4, 0.33],
+            "threshold": 0.5,                     # 단일 임계값 (옵션)
+            "warning_threshold": 0.5,             # 경고 임계값 (옵션)
+            "critical_threshold": 0.7,            # 심각 임계값 (옵션)
+
+            # 메시지 및 LLM 요약 제어
+            "message": "MLP 이상 탐지 결과",
+            "enable_llm_summary": True,           # 기본값 True
+
+            # 추가 메타데이터
+            "meta": {...}
         }
 
-
-def evaluate_alert(alert_data: Optional[Dict[str, Any]] = None) -> AlertResponse:
-    """
-    알림을 평가하고 AlertResponse 객체를 반환합니다.
-    
-    기존 API 호환성을 위한 래퍼 함수입니다.
-    내부적으로 process_alert()를 호출하여 처리합니다.
-    
-    Args:
-        alert_data: 처리할 알림 데이터 (dict)
-            None인 경우 기본 더미 데이터 사용
-            
     Returns:
-        AlertResponse 객체
-        
-    Example:
-        >>> response = evaluate_alert({"vector": [0.6, 0.5]})
-        >>> print(response.status)  # "warning" or "critical"
+        dict | None:
+            - 이상이 아니면 None
+            - 이상이면 알람 페이로드(dict)
     """
-    if alert_data is None:
-        # 기존 호환성을 위한 더미 데이터
-        alert_data = {
-            "anomaly_score": 0.82,
-            "vector": [0.4, 0.33]
-        }
-    
-    # process_alert로 처리
-    result = process_alert(alert_data)
-    
-    # AlertResponse로 변환
-    return AlertResponse(
-        status=result.get("severity", "normal"),
-        message=result.get("message", "Normal operation"),
-        llm_summary=result.get("summary")
+    # --------------------------------------------------------------
+    # 1) 입력 검증
+    # --------------------------------------------------------------
+    vector = alert_data.get("vector")
+    if not isinstance(vector, list) or not vector:
+        logger.warning("process_alert: 'vector'가 유효하지 않아서 처리하지 않습니다. data=%s", alert_data)
+        return None
+
+    threshold = alert_data.get("threshold")
+    warning_threshold = alert_data.get("warning_threshold")
+    critical_threshold = alert_data.get("critical_threshold")
+
+    sensor_id = alert_data.get("sensor_id", "unknown_sensor")
+
+    # --------------------------------------------------------------
+    # 2) 벡터 기반 이상 평가 (심각도 포함/미포함 자동 선택)
+    # --------------------------------------------------------------
+    try:
+        if warning_threshold is not None and critical_threshold is not None:
+            # 경고/심각 임계값이 모두 존재하는 경우
+            norm, is_anomaly, severity = evaluate_anomaly_vector_with_severity(
+                vector=vector,
+                warning_threshold=float(warning_threshold),
+                critical_threshold=float(critical_threshold),
+            )
+        else:
+            # 단일 threshold로만 평가
+            if threshold is None:
+                raise ValueError(
+                    "Either 'threshold' or both 'warning_threshold' and "
+                    "'critical_threshold' must be provided."
+                )
+            norm, is_anomaly = evaluate_anomaly_vector(
+                vector=vector,
+                threshold=float(threshold),
+            )
+            severity = "critical" if is_anomaly else "normal"
+
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("process_alert: 벡터 평가 중 예외 발생 (sensor_id=%s): %s", sensor_id, exc)
+        return None
+
+    # --------------------------------------------------------------
+    # 3) 이상이 아니라면 알람 생성하지 않음
+    # --------------------------------------------------------------
+    if not is_anomaly or severity == "normal":
+        logger.info(
+            "process_alert: 이상 아님 (sensor_id=%s, norm=%.4f, severity=%s)",
+            sensor_id,
+            norm,
+            severity,
+        )
+        return None
+
+    # --------------------------------------------------------------
+    # 4) 기본 알람 페이로드 구성
+    # --------------------------------------------------------------
+    level = _normalize_level(severity)
+
+    alert_id = alert_data.get("id") or f"anomaly-{_now_iso()}"
+    ts = alert_data.get("ts") or _now_iso()
+    source = alert_data.get("source", "alert-engine")
+    base_message = alert_data.get("message") or "Anomaly detected"
+
+    message = f"{base_message} (severity={severity}, norm={norm:.3f})"
+
+    payload: Dict[str, Any] = {
+        "id": alert_id,
+        "level": level,
+        "message": message,
+        "llm_summary": None,
+        "sensor_id": sensor_id,
+        "source": source,
+        "ts": ts,
+        "details": {
+            "vector": vector,
+            "norm": norm,
+            "threshold": threshold,
+            "warning_threshold": warning_threshold,
+            "critical_threshold": critical_threshold,
+            "severity": severity,
+            "meta": alert_data.get("meta") or {},
+        },
+    }
+
+    # --------------------------------------------------------------
+    # 5) LLM 요약 (옵션)
+    # --------------------------------------------------------------
+    enable_llm_summary = alert_data.get("enable_llm_summary", True)
+
+    if enable_llm_summary:
+        try:
+            summary = generate_alert_summary(payload)
+            payload["llm_summary"] = summary
+        except Exception as exc:  # noqa: BLE001
+            # 요약 실패해도 알람 자체는 그대로 사용
+            logger.exception(
+                "process_alert: LLM 요약 생성 실패 (alert_id=%s, sensor_id=%s): %s",
+                alert_id,
+                sensor_id,
+                exc,
+            )
+
+    logger.info(
+        "process_alert: 알람 생성 완료 (alert_id=%s, sensor_id=%s, level=%s, norm=%.4f)",
+        alert_id,
+        sensor_id,
+        level,
+        norm,
     )
+    return payload
+
+
+__all__ = [
+    "evaluate_alert",
+    "process_alert",
+]
