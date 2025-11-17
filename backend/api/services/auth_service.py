@@ -37,12 +37,28 @@ def get_password_hash(password: str) -> str:
     비밀번호를 해시합니다.
     
     Args:
-        password: 평문 비밀번호
+        password: 평문 비밀번호 (최대 72바이트)
         
     Returns:
         해시된 비밀번호
     """
-    return pwd_context.hash(password)
+    # bcrypt는 최대 72바이트까지만 지원
+    # UTF-8 인코딩 시 바이트 길이 확인
+    password_bytes = password.encode('utf-8')
+    if len(password_bytes) > 72:
+        # 72바이트를 초과하면 자동으로 잘라냄
+        password = password_bytes[:72].decode('utf-8', errors='ignore')
+    
+    try:
+        return pwd_context.hash(password)
+    except ValueError as e:
+        # bcrypt 버전 호환성 문제 해결
+        if "cannot be longer than 72 bytes" in str(e):
+            # 이미 72바이트로 제한했지만, 다시 확인
+            password_bytes = password.encode('utf-8')[:72]
+            password = password_bytes.decode('utf-8', errors='ignore')
+            return pwd_context.hash(password)
+        raise
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
