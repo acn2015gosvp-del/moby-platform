@@ -18,6 +18,7 @@ from typing import Dict, Any, Optional, List
 
 from influxdb_client import InfluxDBClient, Point, WriteApi, WriteOptions
 from influxdb_client.client.exceptions import InfluxDBError
+from influxdb_client.client.query_api import QueryApi
 
 from .schemas.models.core.config import settings
 
@@ -87,6 +88,7 @@ class InfluxDBManager:
         )
         
         self.write_api: WriteApi = self.client.write_api(write_options=write_options)
+        self.query_api: QueryApi = self.client.query_api()
         
         # 버퍼 관리
         self.buffer: deque = deque()
@@ -406,6 +408,83 @@ class InfluxDBManager:
         logger.info("🔄 Manual flush requested.")
         self._flush_buffer()
     
+    def query_sensor_status(
+        self,
+        bucket: str,
+        inactive_threshold_minutes: int = 5
+    ) -> Dict[str, Any]:
+        """
+        센서 상태를 조회합니다.
+        
+        최근 inactive_threshold_minutes 분 내에 데이터가 있는 센서를 활성으로 간주합니다.
+        
+        Args:
+            bucket: InfluxDB 버킷 이름
+            inactive_threshold_minutes: 비활성으로 간주할 시간(분)
+            
+        Returns:
+            센서 상태 정보 딕셔너리
+        """
+        try:
+            from datetime import timedelta
+            
+            # Flux 쿼리 작성
+            # 최근 inactive_threshold_minutes 분 내에 데이터가 있는 device_id 목록 조회
+            query = f'''
+            from(bucket: "{bucket}")
+              |> range(start: -{inactive_threshold_minutes}m)
+              |> filter(fn: (r) => r["_measurement"] == "sensor_data")
+              |> filter(fn: (r) => r["_field"] == "temperature" or r["_field"] == "humidity" or r["_field"] == "vibration" or r["_field"] == "sound")
+              |> group(columns: ["device_id"])
+              |> distinct(column: "device_id")
+              |> keep(columns: ["device_id"])
+            '''
+            
+            logger.debug(f"Querying sensor status from InfluxDB. Bucket: {bucket}")
+            
+            # 쿼리 실행
+            result = self.query_api.query(query=query, org=settings.INFLUX_ORG)
+            
+            # 결과 파싱
+            active_devices = set()
+            for table in result:
+                for record in table.records:
+                    device_id = record.values.get("device_id")
+                    if device_id:
+                        active_devices.add(device_id)
+            
+            active_count = len(active_devices)
+            
+            # 전체 센서 수는 활성 센서 수로 추정 (실제로는 별도 관리 필요)
+            # 향후 센서 등록 시스템이 있으면 그곳에서 전체 수를 조회
+            total_count = active_count  # 임시: 활성 센서 수를 전체로 간주
+            inactive_count = 0  # 현재는 비활성 센서를 구분할 수 없음
+            
+            logger.info(
+                f"✅ Sensor status queried. "
+                f"Active: {active_count}, Total: {total_count}"
+            )
+            
+            return {
+                "total_count": total_count,
+                "active_count": active_count,
+                "inactive_count": inactive_count,
+                "devices": list(active_devices)
+            }
+            
+        except Exception as e:
+            logger.error(
+                f"❌ Failed to query sensor status from InfluxDB. Error: {e}",
+                exc_info=True
+            )
+            # 에러 발생 시 빈 결과 반환
+            return {
+                "total_count": 0,
+                "active_count": 0,
+                "inactive_count": 0,
+                "devices": []
+            }
+    
     def close(self):
         """
         리소스를 정리합니다.
@@ -466,6 +545,26 @@ def flush_influxdb():
     InfluxDB 버퍼를 수동으로 플러시합니다.
     """
     influx_manager.flush()
+
+
+def query_sensor_status(bucket: str, inactive_threshold_minutes: int = 5) -> Dict[str, Any]:
+    """
+    센서 상태를 조회합니다.
+    
+    Args:
+        bucket: InfluxDB 버킷 이름
+        inactive_threshold_minutes: 비활성으로 간주할 시간(분) - 이 시간 동안 데이터가 없으면 비활성
+        
+    Returns:
+        센서 상태 정보 딕셔너리:
+        {
+            "total_count": int,
+            "active_count": int,
+            "inactive_count": int,
+            "devices": List[str]  # 활성 센서 목록
+        }
+    """
+    return influx_manager.query_sensor_status(bucket, inactive_threshold_minutes)
 
 
 def close_influxdb():

@@ -14,6 +14,8 @@ from .core.responses import SuccessResponse, ErrorResponse
 from .core.api_exceptions import BadRequestError, InternalServerError
 from .services.schemas.models.core.logger import get_logger
 from backend.api.services.mqtt_client import mqtt_manager
+from backend.api.services.influx_client import query_sensor_status
+from backend.api.services.schemas.models.core.config import settings
 
 router = APIRouter()
 logger = get_logger(__name__)
@@ -219,15 +221,31 @@ async def get_sensor_status() -> SuccessResponse[SensorStatusResponse]:
         실제 구현 시 데이터베이스나 센서 관리 시스템에서 조회해야 합니다.
     """
     try:
-        # TODO: 실제 센서 상태를 데이터베이스나 센서 관리 시스템에서 조회
-        # 현재는 임시 데이터 반환
-        total_count = 10
-        active_count = 9
-        inactive_count = total_count - active_count
+        # InfluxDB에서 센서 상태 조회
+        # 최근 5분 내 데이터가 있는 센서를 활성으로 간주
+        sensor_status = query_sensor_status(
+            bucket=settings.INFLUX_BUCKET,
+            inactive_threshold_minutes=5
+        )
         
-        status_str = "ok" if active_count == total_count else "warning"
+        total_count = sensor_status["total_count"]
+        active_count = sensor_status["active_count"]
+        inactive_count = sensor_status["inactive_count"]
         
-        logger.debug(f"Sensor status requested. Active: {active_count}/{total_count}")
+        # 상태 결정
+        if total_count == 0:
+            status_str = "error"  # 센서가 없음
+        elif active_count == total_count:
+            status_str = "ok"  # 모든 센서 활성
+        elif active_count > 0:
+            status_str = "warning"  # 일부 센서 비활성
+        else:
+            status_str = "error"  # 활성 센서 없음
+        
+        logger.info(
+            f"Sensor status retrieved from InfluxDB. "
+            f"Total: {total_count}, Active: {active_count}, Inactive: {inactive_count}"
+        )
         
         return SuccessResponse(
             success=True,
