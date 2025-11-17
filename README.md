@@ -28,15 +28,27 @@ moby-platform/
 ├── backend/              # FastAPI 백엔드
 │   ├── api/             # API 라우터
 │   │   ├── routes_*.py  # 엔드포인트 정의
+│   │   ├── core/        # 공통 모듈 (예외, 응답)
 │   │   └── services/    # 비즈니스 로직
 │   │       ├── alert_engine.py
 │   │       ├── influx_client.py
 │   │       ├── mqtt_client.py
-│   │       └── llm_client.py
+│   │       ├── llm_client.py
+│   │       └── schemas/ # 데이터 모델
 │   ├── main.py          # FastAPI 앱 진입점
 │   └── tests/           # 테스트 코드
-├── frontend/            # React/Vite 프론트엔드 (예정)
+├── frontend/            # React/Vite 프론트엔드
+│   ├── src/
+│   │   ├── components/  # UI 컴포넌트
+│   │   ├── pages/       # 페이지 컴포넌트
+│   │   ├── services/    # API 서비스
+│   │   ├── hooks/       # 커스텀 훅
+│   │   └── types/       # TypeScript 타입
+│   └── package.json
 ├── docs/                # 프로젝트 문서
+│   ├── API_DOCUMENTATION.md
+│   ├── BACKEND_WORK_STATUS.md
+│   └── FRONTEND_TEMPLATE_REQUIREMENTS.md
 └── scripts/             # 유틸리티 스크립트
 ```
 
@@ -72,7 +84,7 @@ pip install -r requirements.txt
 ```
 
 4. 환경 변수 설정
-`.env` 파일을 생성하고 다음 내용을 설정하세요:
+`env.example` 파일을 참고하여 `.env` 파일을 생성하고 다음 내용을 설정하세요:
 ```env
 MQTT_HOST=localhost
 MQTT_PORT=1883
@@ -80,6 +92,14 @@ INFLUX_URL=http://localhost:8086
 INFLUX_TOKEN=your-token
 INFLUX_ORG=your-org
 OPENAI_API_KEY=your-api-key
+ENVIRONMENT=dev
+LOG_LEVEL=INFO
+DEBUG=false
+```
+
+**참고**: `env.example` 파일을 복사하여 `.env` 파일을 만들 수 있습니다:
+```bash
+cp env.example .env
 ```
 
 5. 서버 실행
@@ -148,17 +168,33 @@ Edge 장치로부터 센서 데이터를 수신할 수 있도록 구현했습니
 
 ## 📝 API 문서
 
-API 문서는 Swagger UI를 통해 확인할 수 있습니다:
-- 개발 서버 실행 후: http://localhost:8000/docs
+API 문서는 다음에서 확인할 수 있습니다:
+- **상세 문서**: [docs/API_DOCUMENTATION.md](docs/API_DOCUMENTATION.md)
+- **Swagger UI**: http://localhost:8000/docs (개발 서버 실행 후)
+- **ReDoc**: http://localhost:8000/redoc
 
 ## 🔧 기술 스택
 
-- **Backend**: FastAPI, Python
+### Backend
+- **Framework**: FastAPI (Python 3.9+)
 - **Database**: InfluxDB 2.x
 - **Message Queue**: MQTT (paho-mqtt)
 - **LLM**: OpenAI API
-- **Frontend**: React, Vite (예정)
+- **Validation**: Pydantic
+- **Logging**: Python logging (표준화됨)
+
+### Frontend
+- **Framework**: React 18+ with TypeScript
+- **Build Tool**: Vite
+- **Routing**: React Router
+- **HTTP Client**: Axios
+- **Styling**: Tailwind CSS
+- **State Management**: React Context API
+
+### Infrastructure
 - **Visualization**: Grafana
+- **Message Broker**: Mosquitto (MQTT)
+- **Time Series DB**: InfluxDB 2.x
 
 ## 📄 라이선스
 
