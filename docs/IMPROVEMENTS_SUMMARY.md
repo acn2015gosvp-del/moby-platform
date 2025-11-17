@@ -56,23 +56,32 @@
 
 ---
 
+## 완료된 추가 작업
+
+### 3. 센서 데이터 파이프라인 연결 ✅
+
+#### 완료 내용
+- **파일**: `backend/api/routes_sensors.py`, `backend/api/services/mqtt_client.py`
+- **구현 내용**:
+  - ✅ 센서 데이터 수신 API에서 MQTT로 발행
+  - ✅ MQTT 메시지 구독 및 InfluxDB 자동 저장
+  - ✅ 센서 상태 조회를 위한 InfluxDB 쿼리 기능 추가
+  - ✅ Flux 쿼리를 사용한 활성 센서 조회
+
+### 4. 알림 최신 조회 엔드포인트 ✅
+
+#### 완료 내용
+- **파일**: `backend/api/routes_alerts.py`, `backend/api/models/alert.py`, `backend/api/services/alert_storage.py`
+- **구현 내용**:
+  - ✅ Alert 데이터베이스 모델 생성
+  - ✅ 알림 저장소 서비스 구현
+  - ✅ 알림 생성 시 자동 데이터베이스 저장
+  - ✅ GET `/alerts/latest` 엔드포인트 구현
+  - ✅ 필터링 기능 (sensor_id, level, limit)
+
+---
+
 ## 향후 개선 사항
-
-### 1. TODO 항목 처리
-
-#### 센서 데이터 파이프라인 연결
-- **파일**: `backend/api/routes_sensors.py`
-- **현재 상태**: TODO 주석으로 표시됨
-- **필요 작업**:
-  - MQTT 클라이언트를 통해 InfluxDB 파이프라인으로 전달
-  - 실제 센서 상태를 데이터베이스에서 조회
-
-#### 알림 최신 조회 엔드포인트
-- **파일**: `backend/api/routes_alerts.py`
-- **현재 상태**: TODO 주석으로 표시됨
-- **필요 작업**:
-  - GET `/alerts/latest` 엔드포인트 구현
-  - 데이터베이스에서 최신 알림 조회
 
 ### 2. 추가 개선 제안
 
@@ -103,13 +112,16 @@
 ### 완료된 작업
 - ✅ 문서화 보완 (API 문서, README)
 - ✅ LLM 클라이언트 개선
+- ✅ 센서 데이터 파이프라인 연결
+- ✅ 센서 상태 조회 데이터베이스 연동
+- ✅ 알림 최신 조회 엔드포인트 구현
 
 ### 진행 중인 작업
 - ⏳ 추가 개선 사항 검토
 
 ### 예정된 작업
-- 📋 TODO 항목 처리
 - 📋 성능 테스트 및 벤치마크
+- 📋 통합 테스트 추가
 
 ---
 
