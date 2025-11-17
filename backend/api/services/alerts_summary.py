@@ -4,8 +4,13 @@
 alert_engine.py에서 LLM 요약 로직을 분리하여 제공하는 서비스입니다.
 알림 데이터를 받아 LLM을 통해 요약을 생성하는 기능을 제공합니다.
 """
+import logging
 from typing import Dict, Optional
+
+from ..core.exceptions import LLMSummaryError
 from .llm_client import summarize_alert
+
+logger = logging.getLogger(__name__)
 
 
 def generate_alert_summary(alert_data: Dict) -> Optional[str]:
@@ -25,14 +30,45 @@ def generate_alert_summary(alert_data: Dict) -> Optional[str]:
     """
     try:
         if not alert_data:
+            logger.warning("generate_alert_summary: alert_data가 비어있습니다.")
             return None
-            
+        
+        alert_id = alert_data.get("id", "unknown")
+        sensor_id = alert_data.get("sensor_id", "unknown")
+        
+        logger.debug(
+            f"generate_alert_summary: LLM 요약 생성 시작. "
+            f"alert_id={alert_id}, sensor_id={sensor_id}"
+        )
+        
         summary = summarize_alert(alert_data)
+        
+        if summary:
+            logger.info(
+                f"generate_alert_summary: LLM 요약 생성 성공. "
+                f"alert_id={alert_id}, summary_length={len(summary)}"
+            )
+        else:
+            logger.warning(
+                f"generate_alert_summary: LLM 요약이 None을 반환했습니다. "
+                f"alert_id={alert_id}"
+            )
+        
         return summary
+        
     except Exception as e:
-        # TODO: 로깅 추가 필요
-        print(f"Error generating alert summary: {e}")
-        return None
+        alert_id = alert_data.get("id", "unknown") if alert_data else "unknown"
+        error = LLMSummaryError(
+            message=f"LLM 요약 생성 중 예외 발생: {e}",
+            alert_id=alert_id,
+            original_error=e
+        )
+        logger.error(
+            f"generate_alert_summary: {error.message} (alert_id={alert_id})",
+            exc_info=True
+        )
+        # 예외를 다시 발생시켜 상위에서 처리할 수 있도록 함
+        raise error
 
 
 def generate_summary_batch(alert_list: list[Dict]) -> list[Optional[str]]:

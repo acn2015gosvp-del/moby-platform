@@ -14,11 +14,19 @@
 from __future__ import annotations
 
 import logging
+import uuid
 from datetime import datetime, UTC, timezone
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
+from ..core.exceptions import (
+    AlertEngineError,
+    AlertValidationError,
+    AlertProcessingError,
+    LLMSummaryError,
+    AnomalyVectorError,
+)
 from .anomaly_vector_service import (
     evaluate_anomaly_vector,
     evaluate_anomaly_vector_with_severity,
@@ -179,17 +187,23 @@ def process_alert(alert_data: Dict[str, Any]) -> Optional[AlertPayloadModel]:
             )
 
     except (ValueError, TypeError) as exc:
+        error = AnomalyVectorError(
+            message=f"벡터 평가 중 데이터 타입 또는 값 오류: {exc}",
+            vector=alert_input.vector,
+            threshold=alert_input.threshold
+        )
         logger.error(
-            "process_alert: 벡터 평가 중 데이터 타입 또는 값 오류 발생 (sensor_id=%s): %s",
-            alert_input.sensor_id,
-            exc,
+            f"process_alert: {error.message} "
+            f"(sensor_id={alert_input.sensor_id}, vector={alert_input.vector})"
         )
         return None
     except Exception as exc:  # noqa: BLE001
+        error = AlertProcessingError(
+            message=f"벡터 평가 중 예상치 못한 예외: {exc}",
+            sensor_id=alert_input.sensor_id
+        )
         logger.exception(
-            "process_alert: 벡터 평가 중 예상치 못한 예외 발생 (sensor_id=%s): %s",
-            alert_input.sensor_id,
-            exc,
+            f"process_alert: {error.message} (sensor_id={alert_input.sensor_id})"
         )
         return None
 
@@ -209,7 +223,8 @@ def process_alert(alert_data: Dict[str, Any]) -> Optional[AlertPayloadModel]:
     # 4) 기본 알람 페이로드 구성
     # --------------------------------------------------------------
     level = _normalize_level(severity)
-    alert_id = alert_input.id or f"{constants.Defaults.ALERT_ID_PREFIX}{_now_iso()}"
+    # UUID를 사용하여 고유한 알람 ID 생성
+    alert_id = alert_input.id or f"{constants.Defaults.ALERT_ID_PREFIX}{uuid.uuid4().hex[:8]}"
     ts = alert_input.ts or _now_iso()
     message = f"{alert_input.message} (severity={severity.value}, norm={norm:.3f})"
 
@@ -241,13 +256,43 @@ def process_alert(alert_data: Dict[str, Any]) -> Optional[AlertPayloadModel]:
         try:
             # Pydantic 모델을 dict로 변환하여 전달
             summary = generate_alert_summary(payload.model_dump())
-            payload.llm_summary = summary
+            if summary:
+                payload.llm_summary = summary
+            else:
+                # LLM 요약 실패 시 fallback 메시지
+                payload.llm_summary = (
+                    f"Alert detected: {payload.message}. "
+                    f"Severity: {severity.value}, Norm: {norm:.3f}. "
+                    f"LLM summary generation was unavailable."
+                )
+                logger.warning(
+                    "process_alert: LLM 요약이 None을 반환했습니다. "
+                    "Fallback 메시지를 사용합니다. "
+                    f"(alert_id={payload.id}, sensor_id={payload.sensor_id})"
+                )
+        except LLMSummaryError as exc:
+            # LLM 관련 커스텀 예외 처리
+            payload.llm_summary = (
+                f"Alert detected: {payload.message}. "
+                f"Severity: {severity.value}, Norm: {norm:.3f}. "
+                f"LLM summary generation failed: {exc.message}"
+            )
+            logger.warning(
+                f"process_alert: LLM 요약 생성 실패 (LLMSummaryError). "
+                f"alert_id={payload.id}, sensor_id={payload.sensor_id}, "
+                f"error={exc.message}. Fallback 메시지를 사용합니다."
+            )
         except Exception as exc:  # noqa: BLE001
+            # 기타 예외 처리
+            payload.llm_summary = (
+                f"Alert detected: {payload.message}. "
+                f"Severity: {severity.value}, Norm: {norm:.3f}. "
+                f"LLM summary generation encountered an error."
+            )
             logger.exception(
-                "process_alert: LLM 요약 생성 실패 (alert_id=%s, sensor_id=%s): %s",
-                payload.id,
-                payload.sensor_id,
-                exc,
+                f"process_alert: LLM 요약 생성 중 예상치 못한 예외 발생. "
+                f"alert_id={payload.id}, sensor_id={payload.sensor_id}, "
+                f"error={exc}. Fallback 메시지를 사용합니다."
             )
 
     logger.info(
