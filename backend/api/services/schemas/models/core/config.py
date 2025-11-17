@@ -30,7 +30,17 @@ def _get_env_file() -> Optional[str]:
     3. None (환경 변수만 사용)
     """
     env = os.getenv("ENVIRONMENT", "dev").lower()
-    project_root = Path(__file__).parent.parent.parent.parent.parent
+    
+    # 프로젝트 루트 찾기
+    # config.py 위치: backend/api/services/schemas/models/core/config.py
+    # 프로젝트 루트까지: core -> models -> schemas -> services -> api -> backend -> project_root (6단계)
+    current_file = Path(__file__).resolve()
+    project_root = current_file.parent.parent.parent.parent.parent.parent
+    
+    # 프로젝트 루트 확인 (backend 폴더가 있는지 확인)
+    if not (project_root / "backend").exists():
+        # 한 단계 더 올라가기
+        project_root = project_root.parent
     
     # .env.{environment} 파일 확인
     env_file = project_root / f".env.{env}"
@@ -71,6 +81,10 @@ class Settings(BaseSettings):
     INFLUX_TOKEN: str = ""
     INFLUX_ORG: str = ""
     INFLUX_BUCKET: str = "moby-data"
+    
+    # Grafana 설정 (선택사항)
+    GRAFANA_URL: str = ""
+    GRAFANA_API_KEY: str = ""
     
     # OpenAI API 설정
     OPENAI_API_KEY: str = ""
