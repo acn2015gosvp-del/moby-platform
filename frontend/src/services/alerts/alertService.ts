@@ -20,6 +20,20 @@ export const createAlert = async (
 }
 
 /**
+ * 최신 알림 목록 조회
+ */
+export const getLatestAlerts = async (params?: {
+  limit?: number
+  sensor_id?: string
+  level?: 'info' | 'warning' | 'critical'
+}): Promise<SuccessResponse<Alert[]>> => {
+  const response = await apiClient.get<SuccessResponse<Alert[]>>('/alerts/latest', {
+    params,
+  })
+  return response.data
+}
+
+/**
  * 알림 목록 조회 (향후 구현)
  */
 export const getAlerts = async (params?: {
