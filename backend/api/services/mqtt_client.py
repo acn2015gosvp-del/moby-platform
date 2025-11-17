@@ -60,6 +60,7 @@ class MqttClientManager:
         self.client.on_connect = self._on_connect
         self.client.on_disconnect = self._on_disconnect
         self.client.on_publish = self._on_publish
+        self.client.on_message = self._on_message
         
         # 백그라운드 루프 시작 (논블로킹)
         self.client.loop_start()
@@ -82,6 +83,15 @@ class MqttClientManager:
             )
             self.connection_attempt_count = 0
             self.is_connecting = False
+            
+            # 센서 데이터 토픽 구독
+            try:
+                # sensors/+/data 패턴으로 모든 센서 데이터 구독
+                client.subscribe("sensors/+/data", qos=1)
+                logger.info("✅ Subscribed to sensor data topics: sensors/+/data")
+            except Exception as e:
+                logger.error(f"❌ Failed to subscribe to sensor topics: {e}", exc_info=True)
+            
             # 연결 성공 시 큐에 있는 메시지 처리 시작
             self._notify_queue_processor()
         else:
@@ -124,6 +134,108 @@ class MqttClientManager:
             )
         else:
             logger.debug(f"📤 MQTT message published. Message ID: {mid}")
+    
+    def _on_message(self, client, userdata, msg):
+        """
+        MQTT 메시지 수신 콜백
+        
+        센서 데이터를 받아서 InfluxDB에 저장합니다.
+        """
+        try:
+            topic = msg.topic
+            payload_str = msg.payload.decode('utf-8')
+            payload = json.loads(payload_str)
+            
+            logger.debug(f"📥 MQTT message received. Topic: {topic}")
+            
+            # 센서 데이터 토픽인 경우 InfluxDB에 저장
+            if topic.startswith("sensors/") and topic.endswith("/data"):
+                self._process_sensor_data(topic, payload)
+            else:
+                logger.debug(f"Unhandled topic: {topic}")
+                
+        except json.JSONDecodeError as e:
+            logger.error(f"❌ Failed to parse MQTT message. Topic: {msg.topic}, Error: {e}")
+        except Exception as e:
+            logger.error(
+                f"❌ Error processing MQTT message. Topic: {msg.topic}, Error: {e}",
+                exc_info=True
+            )
+    
+    def _process_sensor_data(self, topic: str, payload: Dict[str, Any]):
+        """
+        센서 데이터를 InfluxDB에 저장합니다.
+        
+        Args:
+            topic: MQTT 토픽 (예: sensors/sensor_001/data)
+            payload: 센서 데이터 페이로드
+        """
+        try:
+            from backend.api.services.influx_client import influx_manager
+            from backend.api.services.schemas.models.core.config import settings
+            from datetime import datetime
+            
+            device_id = payload.get("device_id", "unknown")
+            
+            # 타임스탬프 파싱
+            timestamp_str = payload.get("timestamp")
+            if timestamp_str:
+                try:
+                    # ISO 8601 형식 파싱
+                    timestamp = datetime.fromisoformat(timestamp_str.replace("Z", "+00:00"))
+                except:
+                    timestamp = datetime.utcnow()
+            else:
+                timestamp = datetime.utcnow()
+            
+            # InfluxDB Point 생성 및 저장
+            bucket = settings.INFLUX_BUCKET
+            measurement = "sensor_data"
+            
+            # 필드 데이터 준비 (None 값 제외)
+            fields = {}
+            if payload.get("temperature") is not None:
+                fields["temperature"] = float(payload["temperature"])
+            if payload.get("humidity") is not None:
+                fields["humidity"] = float(payload["humidity"])
+            if payload.get("vibration") is not None:
+                fields["vibration"] = float(payload["vibration"])
+            if payload.get("sound") is not None:
+                fields["sound"] = float(payload["sound"])
+            
+            # 필드가 없으면 저장하지 않음
+            if not fields:
+                logger.warning(f"No valid fields in sensor data. Device: {device_id}")
+                return
+            
+            # 태그 데이터
+            tags = {
+                "device_id": device_id,
+                "sensor_type": "multi"  # 다중 센서
+            }
+            
+            # InfluxDB에 쓰기
+            influx_manager.write_point(
+                bucket=bucket,
+                measurement=measurement,
+                fields=fields,
+                tags=tags,
+                timestamp=timestamp
+            )
+            
+            logger.info(
+                f"✅ Sensor data saved to InfluxDB. "
+                f"Device: {device_id}, Fields: {list(fields.keys())}"
+            )
+            
+        except ImportError as e:
+            logger.error(f"❌ Failed to import InfluxDB manager: {e}")
+        except Exception as e:
+            logger.error(
+                f"❌ Failed to save sensor data to InfluxDB. "
+                f"Topic: {topic}, Device: {device_id}, Error: {e}",
+                exc_info=True
+            )
 
     def connect_with_retry(
         self, 

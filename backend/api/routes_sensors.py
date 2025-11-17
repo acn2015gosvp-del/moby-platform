@@ -13,6 +13,7 @@ from .services.schemas.sensor_schema import SensorData
 from .core.responses import SuccessResponse, ErrorResponse
 from .core.api_exceptions import BadRequestError, InternalServerError
 from .services.schemas.models.core.logger import get_logger
+from backend.api.services.mqtt_client import mqtt_manager
 
 router = APIRouter()
 logger = get_logger(__name__)
@@ -119,13 +120,34 @@ async def receive_sensor_data(
         InternalServerError: 데이터 처리 중 내부 오류
     """
     try:
-        # TODO: MQTT 클라이언트 등을 통해 InfluxDB 파이프라인으로 전달하는 로직 필요
-        # 현재는 수신 확인만 수행
+        # 센서 데이터를 MQTT로 발행
+        sensor_payload = {
+            "device_id": data.device_id,
+            "temperature": data.temperature,
+            "humidity": data.humidity,
+            "vibration": data.vibration,
+            "sound": data.sound,
+            "timestamp": timestamp
+        }
         
-        logger.info(
-            f"Sensor data received. Device: {data.device_id}, "
-            f"Temperature: {data.temperature}, Humidity: {data.humidity}"
-        )
+        # MQTT 토픽: sensors/{device_id}/data
+        mqtt_topic = f"sensors/{data.device_id}/data"
+        
+        # MQTT로 발행 (비동기 처리)
+        publish_success = mqtt_manager.publish_message(mqtt_topic, sensor_payload)
+        
+        if publish_success:
+            logger.info(
+                f"Sensor data received and published to MQTT. "
+                f"Device: {data.device_id}, Topic: {mqtt_topic}, "
+                f"Temperature: {data.temperature}, Humidity: {data.humidity}"
+            )
+        else:
+            logger.warning(
+                f"Sensor data received but MQTT publish failed (queued for retry). "
+                f"Device: {data.device_id}, Topic: {mqtt_topic}"
+            )
+            # MQTT 발행 실패해도 큐에 저장되어 있으므로 202 응답 유지
         
         return SuccessResponse(
             success=True,
@@ -134,7 +156,7 @@ async def receive_sensor_data(
                 sensor_id=data.device_id,
                 timestamp=timestamp
             ),
-            message=f"Sensor data from {data.device_id} received successfully"
+            message=f"Sensor data from {data.device_id} received and queued for processing"
         )
         
     except ValueError as e:
