@@ -50,4 +50,3 @@ class AnomalyVectorError(AlertEngineError):
         self.vector = vector
         self.threshold = threshold
         self.message = message
-
