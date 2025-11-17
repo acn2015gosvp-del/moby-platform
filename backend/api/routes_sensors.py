@@ -98,7 +98,7 @@ def get_current_timestamp() -> str:
         }
     }
 )
-def receive_sensor_data(
+async def receive_sensor_data(
     data: SensorData,
     timestamp: str = Depends(get_current_timestamp)
 ) -> SuccessResponse[SensorDataResponse]:
@@ -182,7 +182,7 @@ def receive_sensor_data(
         }
     }
 )
-def get_sensor_status() -> SuccessResponse[SensorStatusResponse]:
+async def get_sensor_status() -> SuccessResponse[SensorStatusResponse]:
     """
     전체 센서 연결 상태를 반환합니다.
     

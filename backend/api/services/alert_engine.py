@@ -250,8 +250,10 @@ def process_alert(alert_data: Dict[str, Any]) -> Optional[AlertPayloadModel]:
     )
 
     # --------------------------------------------------------------
-    # 5) LLM 요약 (옵션)
+    # 5) LLM 요약 (옵션) - 동기 처리 (성능 최적화: 비동기 버전은 별도 제공)
     # --------------------------------------------------------------
+    # 참고: LLM 요약은 I/O 작업이지만, 현재는 동기적으로 처리합니다.
+    # 비동기 처리가 필요한 경우 process_alert_async()를 사용하세요.
     if alert_input.enable_llm_summary:
         try:
             # Pydantic 모델을 dict로 변환하여 전달

@@ -4,7 +4,7 @@
 이상 탐지 결과를 기반으로 알림을 생성하고 평가하는 API를 제공합니다.
 """
 
-from fastapi import APIRouter, status, Depends
+from fastapi import APIRouter, status, Depends, BackgroundTasks
 from typing import Optional
 from datetime import datetime
 
@@ -86,8 +86,9 @@ def get_current_timestamp() -> str:
         }
     }
 )
-def create_alert(
+async def create_alert(
     alert_request: AlertRequest,
+    background_tasks: BackgroundTasks,
     timestamp: str = Depends(get_current_timestamp)
 ) -> SuccessResponse[AlertPayloadModel]:
     """
@@ -108,7 +109,9 @@ def create_alert(
     """
     try:
         alert_data = alert_request.model_dump(exclude_none=True)
-        result = process_alert(alert_data)
+        # 동기 함수를 비동기 컨텍스트에서 실행 (블로킹 방지)
+        import asyncio
+        result = await asyncio.to_thread(process_alert, alert_data)
 
         if result is None:
             # 이상이 아니거나 처리 실패 시 204 응답
@@ -117,19 +120,12 @@ def create_alert(
             return Response(status_code=status.HTTP_204_NO_CONTENT)
         
         # 🚨 Notifier 호출 로직 (Alert Engine이 생성한 페이로드를 발송) 🚨
-        try:
-            send_alert(result.model_dump())
-            logger.info(
-                f"Alert {result.id} successfully dispatched via NotifierStub. "
-                f"Sensor: {result.sensor_id}, Level: {result.level}"
-            )
-        except Exception as e:
-            logger.error(
-                f"Alert dispatch FAILED for {result.id}: {e}",
-                exc_info=True
-            )
-            # 발송 실패 시에도 평가는 성공했으므로 201 응답은 유지
-            # 하지만 로그에는 기록됨
+        # 백그라운드 태스크로 발송하여 응답 지연 최소화
+        background_tasks.add_task(send_alert, result.model_dump())
+        logger.info(
+            f"Alert {result.id} queued for dispatch. "
+            f"Sensor: {result.sensor_id}, Level: {result.level}"
+        )
 
         return SuccessResponse(
             success=True,
@@ -168,7 +164,7 @@ def create_alert(
     """,
     deprecated=True
 )
-def create_alert_legacy(alert_request: AlertRequest) -> SuccessResponse[AlertResponse]:
+async def create_alert_legacy(alert_request: AlertRequest) -> SuccessResponse[AlertResponse]:
     """
     레거시 형식으로 알림을 생성하고 평가합니다.
     
@@ -180,7 +176,9 @@ def create_alert_legacy(alert_request: AlertRequest) -> SuccessResponse[AlertRes
     """
     try:
         alert_data = alert_request.model_dump(exclude_none=True)
-        result = process_alert(alert_data)
+        # 동기 함수를 비동기 컨텍스트에서 실행
+        import asyncio
+        result = await asyncio.to_thread(process_alert, alert_data)
 
         if result is None:
             return SuccessResponse(

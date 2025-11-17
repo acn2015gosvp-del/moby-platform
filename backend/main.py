@@ -51,5 +51,6 @@ app.include_router(sensors_router, prefix="/sensors", tags=["Sensors"])
 
 
 @app.get("/")
-def root():
+async def root():
+    """루트 엔드포인트 - API 상태 확인"""
     return {"status": "ok", "message": "MOBY backend running"}
