@@ -1,4 +1,8 @@
-from pydantic import BaseSettings
+try:
+    from pydantic_settings import BaseSettings
+except ImportError:
+    # Pydantic v1 호환성
+    from pydantic import BaseSettings
 
 class Settings(BaseSettings):
     MQTT_HOST: str = "localhost"

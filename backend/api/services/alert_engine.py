@@ -14,16 +14,82 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
-from typing import Any, Dict, Optional, Tuple
+from datetime import datetime, UTC, timezone
+from typing import Any, Dict, List, Optional
+
+from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
 from .anomaly_vector_service import (
     evaluate_anomaly_vector,
     evaluate_anomaly_vector_with_severity,
 )
 from .alerts_summary import generate_alert_summary
+from . import constants
 
 logger = logging.getLogger(__name__)
+
+
+# -------------------------------------------------------------------
+# 타입 정의 (Pydantic Models)
+# -------------------------------------------------------------------
+
+
+class AlertInputModel(BaseModel):
+    """Pydantic 모델: 알람 처리를 위한 입력 데이터 검증"""
+
+    id: Optional[str] = None
+    sensor_id: str = constants.Defaults.SENSOR_ID
+    source: str = constants.Defaults.SOURCE
+    ts: Optional[str] = None
+    vector: List[float]
+    threshold: Optional[float] = None
+    warning_threshold: Optional[float] = None
+    critical_threshold: Optional[float] = None
+    message: str = constants.Defaults.MESSAGE
+    enable_llm_summary: bool = True
+    meta: Dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("vector")
+    @classmethod
+    def vector_must_not_be_empty(cls, v: List[float]) -> List[float]:
+        if not v:
+            raise ValueError(constants.ValidationMessages.VECTOR_EMPTY)
+        return v
+
+    @model_validator(mode='after')
+    def check_thresholds(self) -> 'AlertInputModel':
+        """'threshold' 또는 'warning_threshold'/'critical_threshold' 쌍의 존재 여부를 확인합니다."""
+        if (
+            self.threshold is None
+            and (self.warning_threshold is None or self.critical_threshold is None)
+        ):
+            raise ValueError(constants.ValidationMessages.MISSING_THRESHOLDS)
+        return self
+
+
+class AlertDetailsModel(BaseModel):
+    """Pydantic 모델: 알람 페이로드의 'details' 필드 구조"""
+
+    vector: List[float]
+    norm: float
+    threshold: Optional[float]
+    warning_threshold: Optional[float]
+    critical_threshold: Optional[float]
+    severity: str
+    meta: Dict[str, Any]
+
+
+class AlertPayloadModel(BaseModel):
+    """Pydantic 모델: 최종적으로 생성되는 알람 페이로드 구조"""
+
+    id: str
+    level: str
+    message: str
+    llm_summary: Optional[str] = None
+    sensor_id: str
+    source: str
+    ts: str
+    details: AlertDetailsModel
 
 
 # -------------------------------------------------------------------
@@ -33,24 +99,21 @@ logger = logging.getLogger(__name__)
 
 def _now_iso() -> str:
     """UTC 기준 ISO8601 타임스탬프 문자열을 반환합니다."""
-    return datetime.utcnow().isoformat()
+    # Python 3.11+에서 UTC 사용, 그 이하는 timezone.utc 사용
+    try:
+        return datetime.now(UTC).isoformat()
+    except TypeError:
+        # Python 3.9, 3.10 호환성
+        return datetime.now(timezone.utc).isoformat()
 
 
-def _normalize_level(severity: str) -> str:
+def _normalize_level(severity: constants.Severity) -> constants.AlertLevel:
     """
-    severity 문자열을 UI에서 쓰기 쉬운 level로 매핑합니다.
-
-    severity:
-        - "normal"   → "info"
-        - "warning"  → "warning"
-        - "critical" → "critical"
+    severity 열거형을 UI에서 쓰기 쉬운 level 열거형으로 매핑합니다.
     """
-    mapping = {
-        "normal": "info",
-        "warning": "warning",
-        "critical": "critical",
-    }
-    return mapping.get(severity, "info")
+    return constants.SEVERITY_TO_LEVEL_MAP.get(
+        severity, constants.AlertLevel.INFO
+    )
 
 
 # -------------------------------------------------------------------
@@ -58,17 +121,10 @@ def _normalize_level(severity: str) -> str:
 # -------------------------------------------------------------------
 
 
-def evaluate_alert(alert_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+def evaluate_alert(alert_data: Dict[str, Any]) -> Optional[AlertPayloadModel]:
     """
     기존 코드와의 호환을 위한 엔트리 포인트.
-
-    입력된 alert_data(dict)를 기반으로:
-    - 벡터(norm) 계산
-    - threshold/경고/심각도 평가
-    - 이상이 아닐 경우 None 반환
-    - 이상일 경우 통합 알람 페이로드(dict) 반환
-
-    실제 전송은 상위 레이어에서 처리합니다.
+    내부적으로 Pydantic 모델을 사용하여 데이터를 검증하고 처리합니다.
     """
     return process_alert(alert_data)
 
@@ -78,87 +134,74 @@ def evaluate_alert(alert_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 # -------------------------------------------------------------------
 
 
-def process_alert(alert_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+def process_alert(alert_data: Dict[str, Any]) -> Optional[AlertPayloadModel]:
     """
     알람 평가 및 페이로드 생성의 핵심 로직.
-
-    alert_data 예시(필요시 확장 가능):
-
-        {
-            "sensor_id": "motor_01",
-            "source": "anomaly-worker",
-            "ts": "2025-11-15T03:10:00Z",
-
-            # 벡터 및 임계값
-            "vector": [0.4, 0.33],
-            "threshold": 0.5,                     # 단일 임계값 (옵션)
-            "warning_threshold": 0.5,             # 경고 임계값 (옵션)
-            "critical_threshold": 0.7,            # 심각 임계값 (옵션)
-
-            # 메시지 및 LLM 요약 제어
-            "message": "MLP 이상 탐지 결과",
-            "enable_llm_summary": True,           # 기본값 True
-
-            # 추가 메타데이터
-            "meta": {...}
-        }
-
-    Returns:
-        dict | None:
-            - 이상이 아니면 None
-            - 이상이면 알람 페이로드(dict)
+    Pydantic 모델을 사용하여 입력 데이터를 검증합니다.
     """
     # --------------------------------------------------------------
-    # 1) 입력 검증
+    # 1) 입력 검증 (Pydantic)
     # --------------------------------------------------------------
-    vector = alert_data.get("vector")
-    if not isinstance(vector, list) or not vector:
-        logger.warning("process_alert: 'vector'가 유효하지 않아서 처리하지 않습니다. data=%s", alert_data)
+    try:
+        alert_input = AlertInputModel(**alert_data)
+    except ValidationError as exc:
+        logger.warning(
+            "process_alert: 입력 데이터 검증 실패. data=%s, error=%s", alert_data, exc
+        )
         return None
-
-    threshold = alert_data.get("threshold")
-    warning_threshold = alert_data.get("warning_threshold")
-    critical_threshold = alert_data.get("critical_threshold")
-
-    sensor_id = alert_data.get("sensor_id", "unknown_sensor")
 
     # --------------------------------------------------------------
     # 2) 벡터 기반 이상 평가 (심각도 포함/미포함 자동 선택)
     # --------------------------------------------------------------
     try:
-        if warning_threshold is not None and critical_threshold is not None:
-            # 경고/심각 임계값이 모두 존재하는 경우
-            norm, is_anomaly, severity = evaluate_anomaly_vector_with_severity(
-                vector=vector,
-                warning_threshold=float(warning_threshold),
-                critical_threshold=float(critical_threshold),
+        if (
+            alert_input.warning_threshold is not None
+            and alert_input.critical_threshold is not None
+        ):
+            norm, is_anomaly, severity_str = evaluate_anomaly_vector_with_severity(
+                vector=alert_input.vector,
+                warning_threshold=alert_input.warning_threshold,
+                critical_threshold=alert_input.critical_threshold,
             )
+            # severity_str는 문자열이므로 enum으로 변환
+            severity = constants.Severity(severity_str)
         else:
-            # 단일 threshold로만 평가
-            if threshold is None:
-                raise ValueError(
-                    "Either 'threshold' or both 'warning_threshold' and "
-                    "'critical_threshold' must be provided."
-                )
+            # Pydantic validator가 threshold 존재를 보장함
             norm, is_anomaly = evaluate_anomaly_vector(
-                vector=vector,
-                threshold=float(threshold),
+                vector=alert_input.vector,
+                threshold=alert_input.threshold,  # type: ignore
             )
-            severity = "critical" if is_anomaly else "normal"
+            # severity_str는 이미 enum 값이므로 바로 할당
+            severity = (
+                constants.Severity.CRITICAL
+                if is_anomaly
+                else constants.Severity.NORMAL
+            )
 
+    except (ValueError, TypeError) as exc:
+        logger.error(
+            "process_alert: 벡터 평가 중 데이터 타입 또는 값 오류 발생 (sensor_id=%s): %s",
+            alert_input.sensor_id,
+            exc,
+        )
+        return None
     except Exception as exc:  # noqa: BLE001
-        logger.exception("process_alert: 벡터 평가 중 예외 발생 (sensor_id=%s): %s", sensor_id, exc)
+        logger.exception(
+            "process_alert: 벡터 평가 중 예상치 못한 예외 발생 (sensor_id=%s): %s",
+            alert_input.sensor_id,
+            exc,
+        )
         return None
 
     # --------------------------------------------------------------
     # 3) 이상이 아니라면 알람 생성하지 않음
     # --------------------------------------------------------------
-    if not is_anomaly or severity == "normal":
+    if not is_anomaly or severity == constants.Severity.NORMAL:
         logger.info(
             "process_alert: 이상 아님 (sensor_id=%s, norm=%.4f, severity=%s)",
-            sensor_id,
+            alert_input.sensor_id,
             norm,
-            severity,
+            severity.value,
         )
         return None
 
@@ -166,56 +209,52 @@ def process_alert(alert_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     # 4) 기본 알람 페이로드 구성
     # --------------------------------------------------------------
     level = _normalize_level(severity)
+    alert_id = alert_input.id or f"{constants.Defaults.ALERT_ID_PREFIX}{_now_iso()}"
+    ts = alert_input.ts or _now_iso()
+    message = f"{alert_input.message} (severity={severity.value}, norm={norm:.3f})"
 
-    alert_id = alert_data.get("id") or f"anomaly-{_now_iso()}"
-    ts = alert_data.get("ts") or _now_iso()
-    source = alert_data.get("source", "alert-engine")
-    base_message = alert_data.get("message") or "Anomaly detected"
+    details = AlertDetailsModel(
+        vector=alert_input.vector,
+        norm=norm,
+        threshold=alert_input.threshold,
+        warning_threshold=alert_input.warning_threshold,
+        critical_threshold=alert_input.critical_threshold,
+        severity=severity.value,
+        meta=alert_input.meta,
+    )
 
-    message = f"{base_message} (severity={severity}, norm={norm:.3f})"
-
-    payload: Dict[str, Any] = {
-        "id": alert_id,
-        "level": level,
-        "message": message,
-        "llm_summary": None,
-        "sensor_id": sensor_id,
-        "source": source,
-        "ts": ts,
-        "details": {
-            "vector": vector,
-            "norm": norm,
-            "threshold": threshold,
-            "warning_threshold": warning_threshold,
-            "critical_threshold": critical_threshold,
-            "severity": severity,
-            "meta": alert_data.get("meta") or {},
-        },
-    }
+    payload = AlertPayloadModel(
+        id=alert_id,
+        level=level.value,
+        message=message,
+        llm_summary=None,
+        sensor_id=alert_input.sensor_id,
+        source=alert_input.source,
+        ts=ts,
+        details=details,
+    )
 
     # --------------------------------------------------------------
     # 5) LLM 요약 (옵션)
     # --------------------------------------------------------------
-    enable_llm_summary = alert_data.get("enable_llm_summary", True)
-
-    if enable_llm_summary:
+    if alert_input.enable_llm_summary:
         try:
-            summary = generate_alert_summary(payload)
-            payload["llm_summary"] = summary
+            # Pydantic 모델을 dict로 변환하여 전달
+            summary = generate_alert_summary(payload.model_dump())
+            payload.llm_summary = summary
         except Exception as exc:  # noqa: BLE001
-            # 요약 실패해도 알람 자체는 그대로 사용
             logger.exception(
                 "process_alert: LLM 요약 생성 실패 (alert_id=%s, sensor_id=%s): %s",
-                alert_id,
-                sensor_id,
+                payload.id,
+                payload.sensor_id,
                 exc,
             )
 
     logger.info(
         "process_alert: 알람 생성 완료 (alert_id=%s, sensor_id=%s, level=%s, norm=%.4f)",
-        alert_id,
-        sensor_id,
-        level,
+        payload.id,
+        payload.sensor_id,
+        payload.level,
         norm,
     )
     return payload
@@ -224,4 +263,6 @@ def process_alert(alert_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 __all__ = [
     "evaluate_alert",
     "process_alert",
+    "AlertInputModel",
+    "AlertPayloadModel",
 ]

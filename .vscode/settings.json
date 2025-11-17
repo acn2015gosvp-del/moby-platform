@@ -1,0 +1,12 @@
+{
+  "security.workspace.trust.enabled": true,
+  "security.workspace.trust.untrustedFiles": "open",
+  "files.watcherExclude": {
+    "**/.git/objects/**": true,
+    "**/.git/subtree-cache/**": true,
+    "**/node_modules/**": true
+  },
+  "gemini-cli.debug.logging": true
+}
+
+

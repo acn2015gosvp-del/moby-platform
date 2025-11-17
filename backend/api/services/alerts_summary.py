@@ -5,7 +5,7 @@ alert_engine.py에서 LLM 요약 로직을 분리하여 제공하는 서비스�
 알림 데이터를 받아 LLM을 통해 요약을 생성하는 기능을 제공합니다.
 """
 from typing import Dict, Optional
-from services.llm_client import summarize_alert
+from .llm_client import summarize_alert
 
 
 def generate_alert_summary(alert_data: Dict) -> Optional[str]:

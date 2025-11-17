@@ -1,6 +1,7 @@
 from fastapi import FastAPI
-from api.routes_alerts import router as alerts_router
-from api.routes_sensors import router as sensors_router
+# 오류 수정: 'api.'를 'backend.api.'로 변경하여 Python 경로 문제를 해결
+from backend.api.routes_alerts import router as alerts_router
+from backend.api.routes_sensors import router as sensors_router
 
 app = FastAPI(
     title="MOBY Backend API",
