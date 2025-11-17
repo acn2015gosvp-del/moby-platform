@@ -24,11 +24,11 @@ const apiClient: AxiosInstance = axios.create({
  */
 apiClient.interceptors.request.use(
   (config) => {
-    // TODO: 인증 토큰 추가 (필요 시)
-    // const token = localStorage.getItem('token')
-    // if (token) {
-    //   config.headers.Authorization = `Bearer ${token}`
-    // }
+    // 인증 토큰 추가
+    const token = localStorage.getItem('token')
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`
+    }
     return config
   },
   (error) => {
@@ -52,8 +52,13 @@ apiClient.interceptors.response.use(
       
       // 401 Unauthorized - 인증 실패
       if (error.response.status === 401) {
-        // TODO: 로그인 페이지로 리다이렉트
-        console.error('Unauthorized - redirecting to login')
+        // 토큰 제거 및 로그인 페이지로 리다이렉트
+        localStorage.removeItem('token')
+        localStorage.removeItem('user')
+        delete apiClient.defaults.headers.common['Authorization']
+        if (window.location.pathname !== '/login') {
+          window.location.href = '/login'
+        }
       }
       
       // 500 Internal Server Error

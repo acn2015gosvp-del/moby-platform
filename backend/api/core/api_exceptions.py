@@ -95,3 +95,14 @@ class BadRequestError(APIException):
             field=field
         )
 
+
+class UnauthorizedError(APIException):
+    """인증 실패"""
+    
+    def __init__(self, message: str = "Authentication failed"):
+        super().__init__(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            error_code="UNAUTHORIZED",
+            message=message
+        )
+

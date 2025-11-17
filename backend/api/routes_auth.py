@@ -1,0 +1,268 @@
+"""
+인증 관련 API 엔드포인트
+
+회원가입, 로그인, 토큰 갱신 등의 인증 관련 API를 제공합니다.
+"""
+
+from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from sqlalchemy.orm import Session
+from typing import Optional
+
+from backend.api.services.database import get_db
+from backend.api.services.auth_service import (
+    verify_password,
+    get_password_hash,
+    create_access_token,
+    decode_access_token
+)
+from backend.api.services.schemas.user_schema import (
+    UserCreate,
+    UserResponse,
+    Token,
+    UserLogin
+)
+from backend.api.models.user import User
+from backend.api.core.responses import SuccessResponse, ErrorResponse
+from backend.api.core.api_exceptions import BadRequestError, UnauthorizedError
+from backend.api.services.schemas.models.core.logger import get_logger
+
+router = APIRouter()
+logger = get_logger(__name__)
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
+
+
+@router.post(
+    "/register",
+    response_model=SuccessResponse[UserResponse],
+    status_code=status.HTTP_201_CREATED,
+    summary="회원가입",
+    description="""
+    새로운 사용자를 등록합니다.
+    
+    **요구사항:**
+    - 이메일: 유효한 이메일 형식, 중복 불가
+    - 사용자명: 3-50자, 중복 불가
+    - 비밀번호: 최소 8자, 영문자와 숫자 포함
+    
+    **응답:**
+    - `201 Created`: 회원가입 성공
+    - `400 Bad Request`: 잘못된 요청 데이터 또는 중복된 이메일/사용자명
+    """,
+)
+async def register(
+    user_data: UserCreate,
+    db: Session = Depends(get_db)
+) -> SuccessResponse[UserResponse]:
+    """
+    회원가입 엔드포인트
+    
+    Args:
+        user_data: 회원가입 요청 데이터
+        db: 데이터베이스 세션
+        
+    Returns:
+        SuccessResponse[UserResponse]: 생성된 사용자 정보
+        
+    Raises:
+        BadRequestError: 이메일 또는 사용자명이 이미 존재하는 경우
+    """
+    try:
+        # 이메일 중복 확인
+        existing_user = db.query(User).filter(User.email == user_data.email).first()
+        if existing_user:
+            logger.warning(f"회원가입 실패: 이메일 중복 - {user_data.email}")
+            raise BadRequestError(
+                message="이미 등록된 이메일입니다.",
+                field="email"
+            )
+        
+        # 사용자명 중복 확인
+        existing_user = db.query(User).filter(User.username == user_data.username).first()
+        if existing_user:
+            logger.warning(f"회원가입 실패: 사용자명 중복 - {user_data.username}")
+            raise BadRequestError(
+                message="이미 사용 중인 사용자명입니다.",
+                field="username"
+            )
+        
+        # 비밀번호 해싱
+        hashed_password = get_password_hash(user_data.password)
+        
+        # 사용자 생성
+        db_user = User(
+            email=user_data.email,
+            username=user_data.username,
+            hashed_password=hashed_password,
+            is_active=True
+        )
+        db.add(db_user)
+        db.commit()
+        db.refresh(db_user)
+        
+        logger.info(f"회원가입 성공: {user_data.email} (ID: {db_user.id})")
+        
+        return SuccessResponse(
+            success=True,
+            data=UserResponse(
+                id=db_user.id,
+                email=db_user.email,
+                username=db_user.username,
+                is_active=db_user.is_active,
+                created_at=db_user.created_at
+            ),
+            message="회원가입이 완료되었습니다."
+        )
+        
+    except BadRequestError:
+        raise
+    except Exception as e:
+        logger.exception(f"회원가입 중 예상치 못한 오류: {e}")
+        db.rollback()
+        raise BadRequestError(
+            message="회원가입 중 오류가 발생했습니다."
+        )
+
+
+@router.post(
+    "/login",
+    response_model=SuccessResponse[Token],
+    summary="로그인",
+    description="""
+    사용자 로그인 및 JWT 토큰 발급
+    
+    **입력:**
+    - 이메일: 등록된 이메일 주소
+    - 비밀번호: 사용자 비밀번호
+    
+    **응답:**
+    - `200 OK`: 로그인 성공, JWT 토큰 반환
+    - `401 Unauthorized`: 이메일 또는 비밀번호가 잘못됨
+    """,
+)
+async def login(
+    user_data: UserLogin,
+    db: Session = Depends(get_db)
+) -> SuccessResponse[Token]:
+    """
+    로그인 엔드포인트
+    
+    Args:
+        user_data: 로그인 요청 데이터
+        db: 데이터베이스 세션
+        
+    Returns:
+        SuccessResponse[Token]: JWT 토큰
+        
+    Raises:
+        UnauthorizedError: 이메일 또는 비밀번호가 잘못된 경우
+    """
+    try:
+        # 사용자 조회
+        user = db.query(User).filter(User.email == user_data.email).first()
+        
+        if not user:
+            logger.warning(f"로그인 실패: 존재하지 않는 이메일 - {user_data.email}")
+            raise UnauthorizedError(
+                message="이메일 또는 비밀번호가 잘못되었습니다."
+            )
+        
+        # 비밀번호 확인
+        if not verify_password(user_data.password, user.hashed_password):
+            logger.warning(f"로그인 실패: 비밀번호 불일치 - {user_data.email}")
+            raise UnauthorizedError(
+                message="이메일 또는 비밀번호가 잘못되었습니다."
+            )
+        
+        # 계정 활성화 확인
+        if not user.is_active:
+            logger.warning(f"로그인 실패: 비활성화된 계정 - {user_data.email}")
+            raise UnauthorizedError(
+                message="비활성화된 계정입니다."
+            )
+        
+        # JWT 토큰 생성
+        access_token = create_access_token(data={"sub": user.email})
+        
+        logger.info(f"로그인 성공: {user.email} (ID: {user.id})")
+        
+        return SuccessResponse(
+            success=True,
+            data=Token(access_token=access_token),
+            message="로그인에 성공했습니다."
+        )
+        
+    except UnauthorizedError:
+        raise
+    except Exception as e:
+        logger.exception(f"로그인 중 예상치 못한 오류: {e}")
+        raise UnauthorizedError(
+            message="로그인 중 오류가 발생했습니다."
+        )
+
+
+@router.get(
+    "/me",
+    response_model=SuccessResponse[UserResponse],
+    summary="현재 사용자 정보 조회",
+    description="""
+    현재 로그인한 사용자의 정보를 조회합니다.
+    
+    **인증 필요**: JWT 토큰이 필요합니다.
+    
+    **응답:**
+    - `200 OK`: 사용자 정보 반환
+    - `401 Unauthorized`: 토큰이 유효하지 않음
+    """,
+)
+async def get_current_user(
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db)
+) -> SuccessResponse[UserResponse]:
+    """
+    현재 로그인한 사용자 정보를 반환합니다.
+    
+    Args:
+        token: JWT 토큰 (의존성 주입)
+        db: 데이터베이스 세션
+        
+    Returns:
+        SuccessResponse[UserResponse]: 사용자 정보
+        
+    Raises:
+        UnauthorizedError: 토큰이 유효하지 않거나 사용자를 찾을 수 없는 경우
+    """
+    try:
+        # 토큰 디코딩
+        payload = decode_access_token(token)
+        if payload is None:
+            raise UnauthorizedError(message="유효하지 않은 토큰입니다.")
+        
+        email: str = payload.get("sub")
+        if email is None:
+            raise UnauthorizedError(message="토큰에 이메일 정보가 없습니다.")
+        
+        # 사용자 조회
+        user = db.query(User).filter(User.email == email).first()
+        if user is None:
+            raise UnauthorizedError(message="사용자를 찾을 수 없습니다.")
+        
+        return SuccessResponse(
+            success=True,
+            data=UserResponse(
+                id=user.id,
+                email=user.email,
+                username=user.username,
+                is_active=user.is_active,
+                created_at=user.created_at
+            ),
+            message="사용자 정보 조회 성공"
+        )
+        
+    except UnauthorizedError:
+        raise
+    except Exception as e:
+        logger.exception(f"사용자 정보 조회 중 오류: {e}")
+        raise UnauthorizedError(message="사용자 정보를 조회할 수 없습니다.")
+

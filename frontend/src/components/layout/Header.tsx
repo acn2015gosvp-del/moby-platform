@@ -2,13 +2,21 @@
  * 헤더 컴포넌트
  */
 
-import { Link, useLocation } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { useAuth } from '@/context/AuthContext'
 
 function Header() {
   const location = useLocation()
+  const navigate = useNavigate()
+  const { user, logout } = useAuth()
 
   const isActive = (path: string) => {
     return location.pathname === path
+  }
+
+  const handleLogout = () => {
+    logout()
+    navigate('/login')
   }
 
   return (
@@ -55,9 +63,19 @@ function Header() {
             </Link>
           </nav>
 
-          {/* User Menu (향후 구현) */}
+          {/* User Menu */}
           <div className="flex items-center space-x-4">
-            <div className="w-8 h-8 bg-gray-300 rounded-full"></div>
+            {user && (
+              <>
+                <span className="text-sm text-gray-700">{user.username}</span>
+                <button
+                  onClick={handleLogout}
+                  className="px-3 py-1 text-sm text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-md transition-colors"
+                >
+                  로그아웃
+                </button>
+              </>
+            )}
           </div>
         </div>
       </div>

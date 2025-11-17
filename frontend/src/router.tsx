@@ -7,11 +7,26 @@ import App from './App'
 import Dashboard from './pages/Dashboard'
 import Alerts from './pages/Alerts'
 import Sensors from './pages/Sensors'
+import Login from './pages/Login'
+import Register from './pages/Register'
+import ProtectedRoute from './components/auth/ProtectedRoute'
 
 export const router = createBrowserRouter([
   {
+    path: '/login',
+    element: <Login />,
+  },
+  {
+    path: '/register',
+    element: <Register />,
+  },
+  {
     path: '/',
-    element: <App />,
+    element: (
+      <ProtectedRoute>
+        <App />
+      </ProtectedRoute>
+    ),
     children: [
       {
         index: true,
