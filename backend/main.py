@@ -3,6 +3,7 @@ from backend.api.routes_alerts import router as alerts_router
 from backend.api.routes_sensors import router as sensors_router
 from backend.api.routes_auth import router as auth_router
 from backend.api.routes_grafana import router as grafana_router
+from backend.api.routes_health import router as health_router, set_app_start_time
 from contextlib import asynccontextmanager
 from backend.api.services.mqtt_client import init_mqtt_client # ✅ MQTT 초기화 함수 임포트
 from backend.api.services.database import init_db  # ✅ 데이터베이스 초기화
@@ -10,6 +11,9 @@ from backend.api.services.database import init_db  # ✅ 데이터베이스 초�
 # 로깅 설정 초기화 (가장 먼저 실행)
 from backend.api.services.schemas.models.core.logger import setup_logging, get_logger
 from backend.api.services.schemas.models.core.config import settings
+
+# Prometheus 메트릭
+from prometheus_fastapi_instrumentator import Instrumentator
 
 # 로깅 설정
 setup_logging(
@@ -30,6 +34,7 @@ async def lifespan(app: FastAPI):
     """
     # 1. 서버 시작 (Startup)
     logger.info("Application starting up: Initializing database and MQTT client...")
+    set_app_start_time()  # 애플리케이션 시작 시간 설정
     init_db()  # ✅ 데이터베이스 테이블 생성
     init_mqtt_client()  # ✅ MQTT 연결 시도 및 재시도 로직 호출
     
@@ -54,6 +59,19 @@ app.include_router(auth_router, prefix="/auth", tags=["Authentication"])
 app.include_router(grafana_router, tags=["Grafana"])
 app.include_router(alerts_router, prefix="/alerts", tags=["Alerts"])
 app.include_router(sensors_router, prefix="/sensors", tags=["Sensors"])
+app.include_router(health_router, tags=["Health"])
+
+# Prometheus 메트릭 수집기 설정
+instrumentator = Instrumentator(
+    should_group_status_codes=False,
+    should_ignore_untemplated=True,
+    should_instrument_requests_inprogress=True,
+    excluded_handlers=["/metrics", "/health", "/health/liveness", "/health/readiness"],
+    inprogress_name="http_requests_inprogress",
+    inprogress_labels=True,
+)
+instrumentator.instrument(app)
+instrumentator.expose(app, endpoint="/metrics")
 
 
 @app.get("/")
