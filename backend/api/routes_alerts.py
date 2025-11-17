@@ -5,16 +5,19 @@
 """
 
 from fastapi import APIRouter, status, Depends, BackgroundTasks
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
 
 from .services.schemas.alert_schema import AlertResponse
 from .services.schemas.alert_request_schema import AlertRequest
 from .services.alert_engine import process_alert, AlertPayloadModel
 from .services.notifier_stub import send_alert
+from .services.alert_storage import save_alert, get_latest_alerts
 from .core.responses import SuccessResponse, ErrorResponse
-from .core.api_exceptions import BadRequestError, InternalServerError
+from .core.api_exceptions import BadRequestError, InternalServerError, NotFoundError
 from .services.schemas.models.core.logger import get_logger
+from backend.api.services.database import get_db
+from sqlalchemy.orm import Session
 
 router = APIRouter()
 logger = get_logger(__name__)
@@ -119,6 +122,16 @@ async def create_alert(
             from fastapi import Response
             return Response(status_code=status.HTTP_204_NO_CONTENT)
         
+        # 데이터베이스에 알림 저장
+        try:
+            save_alert(db, result)
+        except Exception as e:
+            logger.error(
+                f"Failed to save alert to database. Alert ID: {result.id}, Error: {e}",
+                exc_info=True
+            )
+            # 저장 실패해도 알림은 생성되었으므로 계속 진행
+        
         # 🚨 Notifier 호출 로직 (Alert Engine이 생성한 페이로드를 발송) 🚨
         # 백그라운드 태스크로 발송하여 응답 지연 최소화
         background_tasks.add_task(send_alert, result.model_dump())
@@ -207,5 +220,128 @@ async def create_alert_legacy(alert_request: AlertRequest) -> SuccessResponse[Al
         )
 
 
-# TODO: GET /latest 엔드포인트는 실제 최신 알림을 DB에서 조회하는 로직이 필요합니다.
-# 현재는 알림 저장소가 없으므로 임시로 제거했습니다.
+@router.get(
+    "/latest",
+    response_model=SuccessResponse[List[AlertPayloadModel]],
+    summary="최신 알림 조회",
+    description="""
+    최신 알림 목록을 조회합니다.
+    
+    **쿼리 파라미터:**
+    - `limit`: 조회할 최대 개수 (기본값: 10, 최대: 100)
+    - `sensor_id`: 특정 센서 ID로 필터링 (선택)
+    - `level`: 특정 레벨로 필터링 (선택: info, warning, critical)
+    
+    **응답:**
+    - `200 OK`: 최신 알림 목록 반환
+    - `500 Internal Server Error`: 서버 내부 오류
+    
+    **예시:**
+    - `/alerts/latest?limit=20` - 최신 20개 알림 조회
+    - `/alerts/latest?sensor_id=sensor_001` - 특정 센서의 최신 알림 조회
+    - `/alerts/latest?level=critical` - Critical 레벨 알림만 조회
+    """,
+    responses={
+        200: {
+            "description": "최신 알림 목록 조회 성공",
+            "model": SuccessResponse[List[AlertPayloadModel]]
+        },
+        500: {
+            "description": "서버 내부 오류",
+            "model": ErrorResponse
+        }
+    }
+)
+async def get_latest_alerts_endpoint(
+    limit: int = 10,
+    sensor_id: Optional[str] = None,
+    level: Optional[str] = None,
+    db: Session = Depends(get_db)
+) -> SuccessResponse[List[AlertPayloadModel]]:
+    """
+    최신 알림 목록을 조회합니다.
+    
+    Args:
+        limit: 조회할 최대 개수 (1-100)
+        sensor_id: 특정 센서 ID로 필터링 (선택)
+        level: 특정 레벨로 필터링 (선택)
+        db: 데이터베이스 세션
+        
+    Returns:
+        SuccessResponse[List[AlertPayloadModel]]: 최신 알림 목록
+        
+    Raises:
+        BadRequestError: 잘못된 파라미터
+        InternalServerError: 조회 중 내부 오류
+    """
+    try:
+        # limit 검증
+        if limit < 1 or limit > 100:
+            raise BadRequestError(
+                message="limit은 1과 100 사이의 값이어야 합니다.",
+                field="limit"
+            )
+        
+        # level 검증
+        if level and level not in ["info", "warning", "critical"]:
+            raise BadRequestError(
+                message="level은 'info', 'warning', 'critical' 중 하나여야 합니다.",
+                field="level"
+            )
+        
+        # 데이터베이스에서 최신 알림 조회
+        alerts = get_latest_alerts(
+            db=db,
+            limit=limit,
+            sensor_id=sensor_id,
+            level=level
+        )
+        
+        # Alert 모델을 AlertPayloadModel로 변환
+        alert_payloads = []
+        for alert in alerts:
+            # details를 AlertDetailsModel로 복원
+            from backend.api.services.alert_engine import AlertDetailsModel
+            
+            details = None
+            if alert.details:
+                details = AlertDetailsModel(**alert.details)
+            
+            payload = AlertPayloadModel(
+                id=alert.alert_id,
+                level=alert.level,
+                message=alert.message,
+                llm_summary=alert.llm_summary,
+                sensor_id=alert.sensor_id,
+                source=alert.source,
+                ts=alert.ts,
+                details=details or AlertDetailsModel(
+                    vector=[],
+                    norm=0.0,
+                    threshold=None,
+                    warning_threshold=None,
+                    critical_threshold=None,
+                    severity="normal",
+                    meta={}
+                )
+            )
+            alert_payloads.append(payload)
+        
+        logger.info(
+            f"Retrieved {len(alert_payloads)} latest alerts. "
+            f"Filters: sensor_id={sensor_id}, level={level}, limit={limit}"
+        )
+        
+        return SuccessResponse(
+            success=True,
+            data=alert_payloads,
+            message=f"Retrieved {len(alert_payloads)} latest alerts"
+        )
+        
+    except BadRequestError:
+        raise
+    except Exception as e:
+        logger.exception(f"Unexpected error while retrieving latest alerts: {e}")
+        raise InternalServerError(
+            message="An error occurred while retrieving latest alerts"
+        )
