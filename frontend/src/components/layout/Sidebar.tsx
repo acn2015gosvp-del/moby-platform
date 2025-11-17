@@ -1,0 +1,52 @@
+/**
+ * 사이드바 컴포넌트
+ */
+
+import { Link, useLocation } from 'react-router-dom'
+
+interface SidebarItem {
+  path: string
+  label: string
+  icon?: string
+}
+
+const menuItems: SidebarItem[] = [
+  { path: '/', label: '대시보드', icon: '📊' },
+  { path: '/alerts', label: '알림', icon: '🚨' },
+  { path: '/sensors', label: '센서', icon: '📡' },
+]
+
+function Sidebar() {
+  const location = useLocation()
+
+  const isActive = (path: string) => {
+    return location.pathname === path
+  }
+
+  return (
+    <aside className="w-64 bg-white shadow-sm border-r min-h-screen">
+      <div className="p-4">
+        <h2 className="text-lg font-semibold text-gray-800 mb-4">메뉴</h2>
+        <nav className="space-y-2">
+          {menuItems.map((item) => (
+            <Link
+              key={item.path}
+              to={item.path}
+              className={`flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${
+                isActive(item.path)
+                  ? 'bg-blue-100 text-blue-700 font-medium'
+                  : 'text-gray-700 hover:bg-gray-100'
+              }`}
+            >
+              {item.icon && <span className="text-xl">{item.icon}</span>}
+              <span>{item.label}</span>
+            </Link>
+          ))}
+        </nav>
+      </div>
+    </aside>
+  )
+}
+
+export default Sidebar
+
