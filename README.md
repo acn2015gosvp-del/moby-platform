@@ -101,6 +101,14 @@ pytest
 
 프로젝트에 기여하고 싶으시다면 [CONTRIBUTING.md](CONTRIBUTING.md)를 참고해주세요.
 
+### 팀 협업 전략
+두 명이서 효율적으로 협업하기 위한 전략은 [docs/TEAM_COLLABORATION.md](docs/TEAM_COLLABORATION.md)를 참고하세요.
+
+**전략 1: 기능별 분담 (추천)**
+- 상세 가이드라인: [docs/STRATEGY_1_GUIDELINE.md](docs/STRATEGY_1_GUIDELINE.md)
+- 작업 할당 예시: [docs/STRATEGY_1_WORK_ASSIGNMENT.md](docs/STRATEGY_1_WORK_ASSIGNMENT.md)
+- 빠른 시작: [docs/QUICK_START_COLLABORATION.md](docs/QUICK_START_COLLABORATION.md)
+
 ### 브랜치 전략
 
 - `main`: 프로덕션 배포용 브랜치
