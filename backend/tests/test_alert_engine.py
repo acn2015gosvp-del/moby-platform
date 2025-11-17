@@ -180,7 +180,7 @@ class TestProcessAlert:
             assert result.llm_summary == mock_summary
 
     def test_llm_summary_failure_graceful_degradation(self):
-        """LLM 요약 실패 시에도 알람은 생성됨"""
+        """LLM 요약 실패 시에도 알람은 생성됨 (fallback 메시지 사용)"""
         alert_data = {
             "vector": [3.0, 4.0],
             "threshold": 3.0,
@@ -190,7 +190,9 @@ class TestProcessAlert:
         with patch("backend.api.services.alert_engine.generate_alert_summary", side_effect=Exception("LLM Error")):
             result = process_alert(alert_data)
             assert result is not None
-            assert result.llm_summary is None  # 실패 시 None
+            # LLM 실패 시 fallback 메시지가 설정됨 (None이 아님)
+            assert result.llm_summary is not None
+            assert "LLM summary generation encountered an error" in result.llm_summary
 
     def test_meta_data_preserved(self):
         """메타 데이터 보존"""

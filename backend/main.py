@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from backend.api.routes_alerts import router as alerts_router
 from backend.api.routes_sensors import router as sensors_router
 from backend.api.routes_auth import router as auth_router
+from backend.api.routes_grafana import router as grafana_router
 from contextlib import asynccontextmanager
 from backend.api.services.mqtt_client import init_mqtt_client # ✅ MQTT 초기화 함수 임포트
 from backend.api.services.database import init_db  # ✅ 데이터베이스 초기화
@@ -50,6 +51,7 @@ app = FastAPI(
 
 # Routers
 app.include_router(auth_router, prefix="/auth", tags=["Authentication"])
+app.include_router(grafana_router, tags=["Grafana"])
 app.include_router(alerts_router, prefix="/alerts", tags=["Alerts"])
 app.include_router(sensors_router, prefix="/sensors", tags=["Sensors"])
 

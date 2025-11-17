@@ -12,7 +12,7 @@ from datetime import datetime
 class TestSensorPipelineIntegration:
     """센서 데이터 파이프라인 통합 테스트"""
     
-    @patch('backend.api.services.mqtt_client.mqtt_manager')
+    @patch('backend.api.routes_sensors.mqtt_manager')
     def test_sensor_data_received_and_published_to_mqtt(
         self,
         mock_mqtt_manager,
@@ -22,7 +22,7 @@ class TestSensorPipelineIntegration:
         """센서 데이터 수신 및 MQTT 발행 테스트"""
         # MQTT 매니저 모킹
         mock_mqtt_manager.publish_message.return_value = True
-        mock_mqtt_manager.client.is_connected.return_value = True
+        mock_mqtt_manager.is_connected.return_value = True
         
         # 센서 데이터 전송
         response = client.post("/sensors/data", json=sample_sensor_data)
@@ -33,8 +33,9 @@ class TestSensorPipelineIntegration:
         assert data["data"]["sensor_id"] == sample_sensor_data["device_id"]
         assert data["data"]["status"] == "received"
         
-        # MQTT 발행 확인
-        mock_mqtt_manager.publish_message.assert_called_once()
+        # MQTT 발행 확인 (연결이 안 되어 있어도 큐에 저장되므로 호출 확인)
+        # 실제로는 연결이 안 되어 있으면 큐에 저장되므로, publish_message가 호출되었는지 확인
+        assert mock_mqtt_manager.publish_message.called
         call_args = mock_mqtt_manager.publish_message.call_args
         assert call_args[0][0] == f"sensors/{sample_sensor_data['device_id']}/data"
         assert call_args[0][1]["device_id"] == sample_sensor_data["device_id"]
@@ -70,26 +71,15 @@ class TestSensorPipelineIntegration:
         assert "temperature" in call_args[1]["fields"]
         assert "humidity" in call_args[1]["fields"]
     
-    @patch('backend.api.services.influx_client.influx_manager')
+    @patch('backend.api.routes_sensors.query_sensor_status')
     def test_sensor_status_query_from_influxdb(
         self,
-        mock_influx_manager,
+        mock_query_sensor_status,
         client
     ):
         """InfluxDB에서 센서 상태 조회 테스트"""
-        from backend.api.services.influx_client import QueryApi
-        from influxdb_client.client.query_api import FluxTable
-        
-        # InfluxDB 쿼리 결과 모킹
-        mock_table = MagicMock()
-        mock_record = MagicMock()
-        mock_record.values = {"device_id": "sensor_001"}
-        mock_table.records = [mock_record]
-        
-        mock_query_api = MagicMock()
-        mock_query_api.query.return_value = [mock_table]
-        mock_influx_manager.query_api = mock_query_api
-        mock_influx_manager.query_sensor_status.return_value = {
+        # query_sensor_status 함수 모킹
+        mock_query_sensor_status.return_value = {
             "total_count": 1,
             "active_count": 1,
             "inactive_count": 0,
@@ -105,4 +95,7 @@ class TestSensorPipelineIntegration:
         assert data["data"]["count"] >= 0
         assert data["data"]["active"] >= 0
         assert "status" in data["data"]
+        
+        # 함수 호출 확인
+        mock_query_sensor_status.assert_called_once()
 

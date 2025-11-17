@@ -30,6 +30,20 @@ def save_alert(db: Session, alert_payload: AlertPayloadModel) -> Alert:
         # AlertPayloadModel을 dict로 변환
         alert_dict = alert_payload.model_dump()
         
+        # details 처리: 이미 dict이거나 AlertDetailsModel 인스턴스일 수 있음
+        details_value = alert_dict.get("details")
+        if details_value:
+            if hasattr(details_value, "model_dump"):
+                # AlertDetailsModel 인스턴스인 경우
+                details_dict = details_value.model_dump()
+            elif isinstance(details_value, dict):
+                # 이미 dict인 경우
+                details_dict = details_value
+            else:
+                details_dict = None
+        else:
+            details_dict = None
+        
         # Alert 모델 생성
         db_alert = Alert(
             alert_id=alert_dict["id"],
@@ -39,7 +53,7 @@ def save_alert(db: Session, alert_payload: AlertPayloadModel) -> Alert:
             sensor_id=alert_dict["sensor_id"],
             source=alert_dict["source"],
             ts=alert_dict["ts"],
-            details=alert_dict["details"].model_dump() if alert_dict.get("details") else None
+            details=details_dict
         )
         
         db.add(db_alert)

@@ -166,6 +166,33 @@ POST /sensors/data 엔드포인트를 추가하여
 Edge 장치로부터 센서 데이터를 수신할 수 있도록 구현했습니다.
 ```
 
+## 🚢 배포
+
+Docker를 사용한 배포 방법은 다음 문서를 참고하세요:
+- **빠른 시작**: [Docker 빠른 시작 가이드](docs/DOCKER_QUICK_START.md)
+- **상세 가이드**: [배포 가이드](docs/DEPLOYMENT_GUIDE.md)
+
+### 빠른 시작 (Docker)
+
+```bash
+# 환경 변수 설정
+cp env.example .env
+# .env 파일 편집 (필수 값 설정)
+
+# 모든 서비스 시작
+docker-compose up -d
+
+# 로그 확인
+docker-compose logs -f
+```
+
+### 개발 환경
+
+```bash
+# 개발 환경용 Docker Compose 사용 (코드 변경 즉시 반영)
+docker-compose -f docker-compose.dev.yml up -d
+```
+
 ## 📝 API 문서
 
 API 문서는 다음에서 확인할 수 있습니다:
