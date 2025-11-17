@@ -136,6 +136,10 @@ dmypy.json
 .env.local
 .env.*.local
 
+# Log files
+logs/
+*.log
+
 # Node modules (if frontend exists)
 node_modules/
 npm-debug.log*

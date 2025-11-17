@@ -1,9 +1,45 @@
 from fastapi import FastAPI
-# 오류 수정: 'api.'를 'backend.api.'로 변경하여 Python 경로 문제를 해결
 from backend.api.routes_alerts import router as alerts_router
 from backend.api.routes_sensors import router as sensors_router
+from contextlib import asynccontextmanager
+from backend.api.services.mqtt_client import init_mqtt_client # ✅ MQTT 초기화 함수 임포트
+
+# 로깅 설정 초기화 (가장 먼저 실행)
+from backend.api.services.schemas.models.core.logger import setup_logging, get_logger
+from backend.api.services.schemas.models.core.config import settings
+
+# 로깅 설정
+setup_logging(
+    log_level=settings.LOG_LEVEL,
+    log_file="logs/moby.log" if settings.is_production() else ("logs/moby-debug.log" if settings.DEBUG else None)
+)
+
+logger = get_logger(__name__)
+
+# -------------------------------------------------------------------
+# FastAPI Lifespan (애플리케이션 생명주기 관리)
+# -------------------------------------------------------------------
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    서버 시작 및 종료 시 실행할 코드를 정의합니다.
+    """
+    # 1. 서버 시작 (Startup)
+    logger.info("Application starting up: Initializing MQTT client connection...")
+    init_mqtt_client()  # ✅ MQTT 연결 시도 및 재시도 로직 호출
+    
+    # 2. 애플리케이션 실행 (Yield)
+    yield
+    
+    # 3. 서버 종료 (Shutdown)
+    logger.info("Application shutting down: No specific MQTT cleanup needed (paho handles it).")
+
+# -------------------------------------------------------------------
 
 app = FastAPI(
+    # ✅ lifespan 핸들러 등록
+    lifespan=lifespan,
     title="MOBY Backend API",
     description="Industrial IoT & Predictive Maintenance Platform",
     version="1.0.0",
