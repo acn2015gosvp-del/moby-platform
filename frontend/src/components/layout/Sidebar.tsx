@@ -14,6 +14,7 @@ const menuItems: SidebarItem[] = [
   { path: '/', label: '대시보드', icon: '📊' },
   { path: '/alerts', label: '알림', icon: '🚨' },
   { path: '/sensors', label: '센서', icon: '📡' },
+  { path: '/reports', label: '보고서', icon: '📄' },
 ]
 
 function Sidebar() {

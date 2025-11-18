@@ -13,6 +13,7 @@ import ProtectedRoute from './components/auth/ProtectedRoute'
 const Dashboard = lazy(() => import('./pages/Dashboard'))
 const Alerts = lazy(() => import('./pages/Alerts'))
 const Sensors = lazy(() => import('./pages/Sensors'))
+const Reports = lazy(() => import('./pages/Reports'))
 const Login = lazy(() => import('./pages/Login'))
 const Register = lazy(() => import('./pages/Register'))
 
@@ -69,6 +70,14 @@ export const router = createBrowserRouter([
         element: (
           <LazyWrapper>
             <Sensors />
+          </LazyWrapper>
+        ),
+      },
+      {
+        path: 'reports',
+        element: (
+          <LazyWrapper>
+            <Reports />
           </LazyWrapper>
         ),
       },

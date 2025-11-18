@@ -14,6 +14,7 @@ paho-mqtt>=1.6.1
 
 # LLM 클라이언트
 openai>=1.3.0
+google-generativeai>=0.3.0
 
 # 테스트
 pytest>=7.4.0

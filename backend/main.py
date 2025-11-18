@@ -4,6 +4,7 @@ from backend.api.routes_sensors import router as sensors_router
 from backend.api.routes_auth import router as auth_router
 from backend.api.routes_grafana import router as grafana_router
 from backend.api.routes_health import router as health_router, set_app_start_time
+from backend.api.routes_reports import router as reports_router
 from contextlib import asynccontextmanager
 from backend.api.services.mqtt_client import init_mqtt_client # ✅ MQTT 초기화 함수 임포트
 from backend.api.services.database import init_db  # ✅ 데이터베이스 초기화
@@ -90,6 +91,7 @@ app.include_router(auth_router, prefix="/auth", tags=["Authentication"])
 app.include_router(grafana_router, tags=["Grafana"])
 app.include_router(alerts_router, prefix="/alerts", tags=["Alerts"])
 app.include_router(sensors_router, prefix="/sensors", tags=["Sensors"])
+app.include_router(reports_router, tags=["Reports"])
 app.include_router(health_router, tags=["Health"])
 
 # Prometheus 메트릭 수집기 설정

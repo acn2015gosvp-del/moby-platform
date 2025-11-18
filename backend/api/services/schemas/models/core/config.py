@@ -90,6 +90,9 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str = ""
     OPENAI_MODEL: str = "gpt-3.5-turbo"
     
+    # Gemini API 설정 (보고서 생성용)
+    GEMINI_API_KEY: str = ""
+    
     # 인증 설정
     SECRET_KEY: str = "your-secret-key-change-in-production"
     ALGORITHM: str = "HS256"
