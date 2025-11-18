@@ -9,7 +9,7 @@ import logging
 import hashlib
 import json
 import time
-from typing import Optional, Any, Dict
+from typing import Optional, Any, Dict, Callable
 from threading import Lock
 
 logger = logging.getLogger(__name__)
@@ -91,7 +91,7 @@ class MemoryCache:
             return len(expired_keys)
 
     def get_or_set(
-        self, key: str, factory: callable, ttl: Optional[float] = None
+        self, key: str, factory: Callable[[], Any], ttl: Optional[float] = None
     ) -> Any:
         """캐시에서 조회하거나, 없으면 factory 함수를 실행하여 저장"""
         value = self.get(key)
@@ -122,7 +122,7 @@ def cache_key(prefix: str, *args, **kwargs) -> str:
     return _cache._generate_key(prefix, *args, **kwargs)
 
 
-def cached(ttl: float = 300.0, key_prefix: Optional[str] = None):
+def cached(ttl: float = 300.0, key_prefix: Optional[str] = None) -> Callable:
     """
     함수 결과를 캐싱하는 데코레이터
 
@@ -130,15 +130,18 @@ def cached(ttl: float = 300.0, key_prefix: Optional[str] = None):
         ttl: 캐시 TTL (초)
         key_prefix: 캐시 키 접두사 (기본값: 함수명)
 
+    Returns:
+        데코레이터 함수
+
     Example:
         @cached(ttl=600)
-        def expensive_function(arg1, arg2):
+        def expensive_function(arg1: int, arg2: int) -> int:
             return expensive_computation(arg1, arg2)
     """
-    def decorator(func):
+    def decorator(func: Callable) -> Callable:
         prefix = key_prefix or func.__name__
 
-        def wrapper(*args, **kwargs):
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
             key = cache_key(prefix, *args, **kwargs)
             cache = get_cache()
 

@@ -540,5 +540,3 @@ def publish_alert(topic: str, payload: Dict[str, Any]):
     return mqtt_manager.publish_message(topic, payload)
 
 # -------------------------------------------------------------------
-
-# TODO: init_mqtt_client() 함수를 backend/main.py의 lifespan 이벤트에 등록해야 합니다.
