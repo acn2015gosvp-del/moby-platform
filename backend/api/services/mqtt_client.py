@@ -43,6 +43,31 @@ class MqttClientManager:
     def __init__(self):
         self.host = settings.MQTT_HOST
         self.port = settings.MQTT_PORT
+        
+        # 호스트 유효성 검사 및 정규화
+        if not self.host or not isinstance(self.host, str) or not self.host.strip():
+            logger.warning(
+                f"⚠️ MQTT_HOST가 유효하지 않습니다: '{self.host}'. "
+                f"MQTT 기능이 비활성화됩니다."
+            )
+            self.host = None
+            self.client = None
+            self.message_queue: deque = deque()
+            self.queue_lock = threading.Lock()
+            self.max_queue_size = 1000
+            self.is_connecting = False
+            self.connection_lock = threading.Lock()
+            self.last_connection_attempt: Optional[datetime] = None
+            self.connection_attempt_count = 0
+            self.queue_processor_thread = None
+            return
+        
+        # paho-mqtt v2.0+에서는 "localhost"를 "127.0.0.1"로 변환
+        # "Invalid host" 오류 방지
+        if self.host.strip().lower() == "localhost":
+            self.host = "127.0.0.1"
+            logger.debug(f"MQTT 호스트 'localhost'를 '127.0.0.1'로 변환했습니다.")
+        
         self.client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
         
         # 메시지 큐 (스레드 안전)
@@ -62,8 +87,11 @@ class MqttClientManager:
         self.client.on_publish = self._on_publish
         self.client.on_message = self._on_message
         
-        # 백그라운드 루프 시작 (논블로킹)
-        self.client.loop_start()
+        # 백그라운드 루프는 connect() 호출 전에 시작하지 않음
+        # loop_start()는 자동 재연결을 시도하므로, 호스트가 유효하지 않으면
+        # 백그라운드 스레드에서 "Invalid host" 오류가 발생합니다.
+        # 대신 connect() 성공 후에만 loop_start()를 호출합니다.
+        self._loop_started = False
         
         # 큐 처리 스레드 시작
         self.queue_processor_thread = threading.Thread(
@@ -75,6 +103,9 @@ class MqttClientManager:
 
     def _on_connect(self, client, userdata, flags, rc, properties=None):
         """연결 성공/실패 콜백"""
+        if not self.host:
+            return  # 호스트가 없으면 콜백 처리하지 않음
+            
         if rc == 0:
             # paho-mqtt v2.0+에서는 flags가 ConnectFlags 객체입니다 (딕셔너리가 아님)
             session_present = getattr(flags, 'session_present', 0)
@@ -258,6 +289,14 @@ class MqttClientManager:
         Returns:
             연결 성공 여부
         """
+        # 호스트가 유효하지 않으면 연결 시도하지 않음
+        if not self.host or not self.client:
+            logger.info(
+                "ℹ️ MQTT 호스트가 설정되지 않았습니다. "
+                "MQTT 연결을 건너뜁니다."
+            )
+            return False
+        
         with self.connection_lock:
             if self.is_connecting:
                 logger.debug("MQTT connection attempt already in progress, skipping...")
@@ -277,8 +316,35 @@ class MqttClientManager:
                     f"Host: {self.host}:{self.port}"
                 )
                 
-                # 연결 시도
-                result = self.client.connect(self.host, self.port, keepalive=60)
+                # 연결 시도 (예외 처리 포함)
+                try:
+                    # connect() 전에 loop_start() 호출 (연결이 성공하면 _on_connect에서 처리)
+                    if not self._loop_started:
+                        try:
+                            self.client.loop_start()
+                            self._loop_started = True
+                        except Exception as e:
+                            logger.warning(f"⚠️ MQTT loop_start 실패: {e}")
+                    
+                    result = self.client.connect(self.host, self.port, keepalive=60)
+                except ValueError as e:
+                    # "Invalid host" 오류 처리
+                    if "Invalid host" in str(e) or "invalid host" in str(e).lower():
+                        logger.warning(
+                            f"⚠️ MQTT 호스트 '{self.host}'가 유효하지 않습니다. "
+                            f"MQTT 연결을 건너뜁니다."
+                        )
+                        # loop_stop() 호출하여 백그라운드 스레드 종료
+                        try:
+                            if self._loop_started:
+                                self.client.loop_stop()
+                                self._loop_started = False
+                        except:
+                            pass
+                        with self.connection_lock:
+                            self.is_connecting = False
+                        return False
+                    raise  # 다른 ValueError는 다시 발생시킴
                 
                 if result == 0:
                     # 연결 성공 (실제 연결은 _on_connect에서 확인)
@@ -338,15 +404,24 @@ class MqttClientManager:
 
     def publish_message(self, topic: str, payload: Dict[str, Any]) -> bool:
         """
-        메시지 발송을 시도하고, 실패 시 큐에 저장합니다.
+        MQTT 메시지를 발행합니다.
         
         Args:
             topic: MQTT 토픽
-            payload: 발송할 메시지 데이터
+            payload: 발행할 데이터 (딕셔너리)
             
         Returns:
-            발송 성공 여부 (큐에 저장된 경우도 True 반환)
+            bool: 발행 성공 여부
         """
+        # 호스트가 유효하지 않으면 큐에만 저장
+        if not self.host or not self.client:
+            logger.debug(
+                f"MQTT 호스트가 설정되지 않아 메시지를 큐에 저장합니다. "
+                f"Topic: {topic}"
+            )
+            self._queue_message(topic, payload)
+            return False
+        
         # 연결되어 있으면 즉시 발송 시도
         if self.client.is_connected():
             try:
@@ -443,6 +518,11 @@ class MqttClientManager:
         
         while True:
             try:
+                # 호스트가 없으면 스레드 종료
+                if not self.host or not self.client:
+                    logger.info("ℹ️ MQTT 호스트가 없어 큐 프로세서를 종료합니다.")
+                    break
+                
                 # 연결되어 있고 큐에 메시지가 있으면 처리
                 if self.client.is_connected() and len(self.message_queue) > 0:
                     with self.queue_lock:
