@@ -5,6 +5,7 @@
 import React, { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
+import { extractErrorMessage } from '@/utils/errorHandler'
 
 const Register: React.FC = () => {
   const navigate = useNavigate()
@@ -58,10 +59,11 @@ const Register: React.FC = () => {
       })
       navigate('/')
     } catch (err: any) {
-      setError(
-        err.response?.data?.error?.message || 
+      const errorMessage = extractErrorMessage(
+        err,
         '회원가입에 실패했습니다. 입력 정보를 확인해주세요.'
       )
+      setError(errorMessage)
     } finally {
       setIsLoading(false)
     }

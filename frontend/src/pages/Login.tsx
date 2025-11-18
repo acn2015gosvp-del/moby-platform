@@ -5,6 +5,7 @@
 import React, { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
+import { extractErrorMessage } from '@/utils/errorHandler'
 
 const Login: React.FC = () => {
   const navigate = useNavigate()
@@ -34,10 +35,11 @@ const Login: React.FC = () => {
       await login(formData)
       navigate('/')
     } catch (err: any) {
-      setError(
-        err.response?.data?.error?.message || 
+      const errorMessage = extractErrorMessage(
+        err,
         '로그인에 실패했습니다. 이메일과 비밀번호를 확인해주세요.'
       )
+      setError(errorMessage)
     } finally {
       setIsLoading(false)
     }

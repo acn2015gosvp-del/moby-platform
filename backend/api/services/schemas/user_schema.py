@@ -4,15 +4,41 @@
 회원가입, 로그인, 사용자 정보 응답을 위한 Pydantic 모델을 정의합니다.
 """
 
-from pydantic import BaseModel, EmailStr, Field, field_validator
+import re
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional
 from datetime import datetime
+from .models.core.config import settings
+
+
+def validate_email(email: str) -> str:
+    """
+    이메일 주소를 검증합니다.
+    개발 환경에서는 .local 도메인을 허용합니다.
+    """
+    # 기본 이메일 형식 검증 (프로덕션)
+    email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    
+    # 개발/테스트 환경에서는 .local 도메인도 허용
+    if settings.is_development() or settings.is_testing():
+        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+(\.[a-zA-Z]{2,}|\.local)$'
+    
+    if not re.match(email_pattern, email):
+        raise ValueError("유효하지 않은 이메일 주소 형식입니다.")
+    
+    return email
 
 
 class UserBase(BaseModel):
     """사용자 기본 정보"""
-    email: EmailStr
+    email: str = Field(..., description="이메일 주소")
     username: str = Field(..., min_length=3, max_length=50)
+    
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, v: str) -> str:
+        """이메일 주소 검증"""
+        return validate_email(v)
 
 
 class UserCreate(UserBase):
@@ -34,8 +60,14 @@ class UserCreate(UserBase):
 
 class UserLogin(BaseModel):
     """로그인 요청 스키마"""
-    email: EmailStr
+    email: str = Field(..., description="이메일 주소")
     password: str
+    
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, v: str) -> str:
+        """이메일 주소 검증"""
+        return validate_email(v)
 
 
 class UserResponse(UserBase):

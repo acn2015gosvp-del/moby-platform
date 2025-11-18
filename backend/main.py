@@ -1,6 +1,8 @@
-from fastapi import FastAPI
-from backend.api.routes_alerts import router as alerts_router
+from fastapi import FastAPI, Request, status
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from backend.api.routes_sensors import router as sensors_router
+from backend.api.routes_alerts import router as alerts_router
 from backend.api.routes_auth import router as auth_router
 from backend.api.routes_grafana import router as grafana_router
 from backend.api.routes_health import router as health_router, set_app_start_time
@@ -21,6 +23,9 @@ from backend.api.middleware.rate_limit import RateLimitMiddleware
 
 # CSRF Protection
 from backend.api.middleware.csrf import CSRFMiddleware
+
+# 예외 처리
+from backend.api.core.api_exceptions import APIException
 
 # 로깅 설정
 setup_logging(
@@ -69,6 +74,30 @@ app = FastAPI(
     title="MOBY Backend API",
     description="Industrial IoT & Predictive Maintenance Platform",
     version="1.0.0",
+)
+
+# 예외 핸들러 등록 (프론트엔드와의 일관된 에러 형식을 위해 필수)
+@app.exception_handler(APIException)
+async def api_exception_handler(request: Request, exc: APIException):
+    """APIException을 ErrorResponse 형식으로 변환"""
+    error_response = exc.to_error_response()
+    return JSONResponse(
+        status_code=exc.status_code,
+        content=error_response.model_dump()
+    )
+
+# CORS 미들웨어 추가 (프론트엔드와의 통신을 위해 필수)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:5173",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # Rate Limiting 미들웨어 추가
