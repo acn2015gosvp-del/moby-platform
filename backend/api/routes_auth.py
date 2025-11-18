@@ -5,9 +5,9 @@
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
-from typing import Optional
+from typing import Optional, List
 
 from backend.api.services.database import get_db
 from backend.api.services.auth_service import (
@@ -25,14 +25,12 @@ from backend.api.services.schemas.user_schema import (
 from backend.api.models.user import User
 from backend.api.core.responses import SuccessResponse, ErrorResponse
 from backend.api.core.api_exceptions import BadRequestError, UnauthorizedError
-from backend.api.core.permissions import require_permissions, require_role, get_user_permissions
+from backend.api.core.permissions import require_permissions, require_role, get_user_permissions, get_current_user, oauth2_scheme
 from backend.api.models.role import Role, Permission
 from backend.api.services.schemas.models.core.logger import get_logger
 
 router = APIRouter()
 logger = get_logger(__name__)
-
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
 
 
 @router.post(
@@ -221,16 +219,14 @@ async def login(
     - `401 Unauthorized`: 토큰이 유효하지 않음
     """,
 )
-async def get_current_user(
-    token: str = Depends(oauth2_scheme),
-    db: Session = Depends(get_db)
+async def get_current_user_endpoint(
+    current_user: User = Depends(get_current_user)
 ) -> SuccessResponse[UserResponse]:
     """
     현재 로그인한 사용자 정보를 반환합니다.
     
     Args:
-        token: JWT 토큰 (의존성 주입)
-        db: 데이터베이스 세션
+        current_user: 현재 로그인한 사용자 (의존성 주입)
         
     Returns:
         SuccessResponse[UserResponse]: 사용자 정보
@@ -239,35 +235,19 @@ async def get_current_user(
         UnauthorizedError: 토큰이 유효하지 않거나 사용자를 찾을 수 없는 경우
     """
     try:
-        # 토큰 디코딩
-        payload = decode_access_token(token)
-        if payload is None:
-            raise UnauthorizedError(message="유효하지 않은 토큰입니다.")
-        
-        email: str = payload.get("sub")
-        if email is None:
-            raise UnauthorizedError(message="토큰에 이메일 정보가 없습니다.")
-        
-        # 사용자 조회
-        user = db.query(User).filter(User.email == email).first()
-        if user is None:
-            raise UnauthorizedError(message="사용자를 찾을 수 없습니다.")
-        
         return SuccessResponse(
             success=True,
             data=UserResponse(
-                id=user.id,
-                email=user.email,
-                username=user.username,
-                is_active=user.is_active,
-                role=user.role,
-                created_at=user.created_at
+                id=current_user.id,
+                email=current_user.email,
+                username=current_user.username,
+                is_active=current_user.is_active,
+                role=current_user.role,
+                created_at=current_user.created_at
             ),
             message="사용자 정보 조회 성공"
         )
         
-    except UnauthorizedError:
-        raise
     except Exception as e:
         logger.exception(f"사용자 정보 조회 중 오류: {e}")
         raise UnauthorizedError(message="사용자 정보를 조회할 수 없습니다.")
