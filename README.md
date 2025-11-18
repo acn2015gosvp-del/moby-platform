@@ -104,12 +104,15 @@ cp env.example .env
 
 5. 서버 실행
 ```bash
-uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
+# ⚠️ 중요: 프로젝트 루트 디렉토리에서 실행해야 합니다!
+uvicorn backend.main:app --reload --host 0.0.0.0 --port 8001
 ```
 
 서버가 실행되면 다음 주소에서 API 문서를 확인할 수 있습니다:
-- Swagger UI: http://localhost:8000/docs
-- ReDoc: http://localhost:8000/redoc
+- Swagger UI: http://localhost:8001/docs
+- ReDoc: http://localhost:8001/redoc
+
+**참고**: 상세한 실행 가이드는 [빠른 시작 가이드](docs/QUICK_START.md)를 참고하세요.
 
 ## 🧪 테스트
 
@@ -197,8 +200,8 @@ docker-compose -f docker-compose.dev.yml up -d
 
 API 문서는 다음에서 확인할 수 있습니다:
 - **상세 문서**: [docs/API_DOCUMENTATION.md](docs/API_DOCUMENTATION.md)
-- **Swagger UI**: http://localhost:8000/docs (개발 서버 실행 후)
-- **ReDoc**: http://localhost:8000/redoc
+- **Swagger UI**: http://localhost:8001/docs (개발 서버 실행 후)
+- **ReDoc**: http://localhost:8001/redoc
 
 ## 🔧 기술 스택
 

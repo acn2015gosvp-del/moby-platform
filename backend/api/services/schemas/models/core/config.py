@@ -111,34 +111,92 @@ class Settings(BaseSettings):
             case_sensitive = False
             extra = "ignore"
     
-    def validate_settings(self) -> list[str]:
+    def validate_settings(self) -> tuple[list[str], list[str]]:
         """
         설정값을 검증하고 문제가 있는 필드를 반환합니다.
         
         Returns:
-            문제가 있는 필드 이름 리스트
+            (critical_issues, warning_issues): (치명적 문제 리스트, 경고 문제 리스트)
         """
-        issues = []
+        critical_issues = []
+        warning_issues = []
         
-        # 필수 설정 검증
-        if not self.INFLUX_TOKEN or self.INFLUX_TOKEN == "your-token":
-            issues.append("INFLUX_TOKEN")
+        # 프로덕션 환경 필수 설정 검증
+        if self.is_production():
+            # SECRET_KEY 검증 (프로덕션에서 기본값 사용 시 치명적)
+            if not self.SECRET_KEY or self.SECRET_KEY in (
+                "your-secret-key-change-in-production",
+                "your-secret-key-here-change-this-in-production",
+                "change-this-in-production"
+            ):
+                critical_issues.append("SECRET_KEY (프로덕션 환경에서 기본값 사용 금지)")
+            
+            # InfluxDB 필수 설정
+            if not self.INFLUX_TOKEN or self.INFLUX_TOKEN in ("your-token", "your-influxdb-token-here"):
+                critical_issues.append("INFLUX_TOKEN")
+            
+            if not self.INFLUX_ORG or self.INFLUX_ORG in ("your-org", "your-influxdb-org-here"):
+                critical_issues.append("INFLUX_ORG")
+            
+            # URL 형식 검증
+            if not self.INFLUX_URL.startswith(("http://", "https://")):
+                critical_issues.append("INFLUX_URL (올바른 URL 형식이 아님)")
+            
+            # 포트 범위 검증
+            if not (1 <= self.MQTT_PORT <= 65535):
+                critical_issues.append("MQTT_PORT (유효하지 않은 포트 번호)")
         
-        if not self.INFLUX_ORG or self.INFLUX_ORG == "your-org":
-            issues.append("INFLUX_ORG")
+        # 개발 환경 경고 검증
+        else:
+            if not self.INFLUX_TOKEN or self.INFLUX_TOKEN in ("your-token", "your-influxdb-token-here"):
+                warning_issues.append("INFLUX_TOKEN (일부 기능이 제한될 수 있음)")
+            
+            if not self.INFLUX_ORG or self.INFLUX_ORG in ("your-org", "your-influxdb-org-here"):
+                warning_issues.append("INFLUX_ORG (일부 기능이 제한될 수 있음)")
+            
+            if not self.INFLUX_URL.startswith(("http://", "https://")):
+                warning_issues.append("INFLUX_URL (올바른 URL 형식이 아님)")
+            
+            if not (1 <= self.MQTT_PORT <= 65535):
+                warning_issues.append("MQTT_PORT (유효하지 않은 포트 번호)")
         
-        if not self.OPENAI_API_KEY or self.OPENAI_API_KEY == "your-api-key":
-            issues.append("OPENAI_API_KEY")
+        # 공통 검증 (모든 환경)
+        if not self.OPENAI_API_KEY or self.OPENAI_API_KEY in ("your-api-key", "your-openai-api-key-here"):
+            warning_issues.append("OPENAI_API_KEY (LLM 기능 사용 불가)")
         
-        # URL 형식 검증
-        if not self.INFLUX_URL.startswith(("http://", "https://")):
-            issues.append("INFLUX_URL")
+        # SECRET_KEY 기본값 경고 (개발 환경)
+        if not self.is_production() and self.SECRET_KEY in (
+            "your-secret-key-change-in-production",
+            "your-secret-key-here-change-this-in-production",
+            "change-this-in-production"
+        ):
+            warning_issues.append("SECRET_KEY (기본값 사용 중 - 프로덕션 배포 전 변경 필요)")
         
-        # 포트 범위 검증
-        if not (1 <= self.MQTT_PORT <= 65535):
-            issues.append("MQTT_PORT")
+        return critical_issues, warning_issues
+    
+    def validate_and_raise(self) -> None:
+        """
+        설정을 검증하고 프로덕션 환경에서 치명적 문제가 있으면 예외를 발생시킵니다.
         
-        return issues
+        Raises:
+            ValueError: 프로덕션 환경에서 필수 설정이 누락된 경우
+        """
+        critical_issues, warning_issues = self.validate_settings()
+        
+        if critical_issues:
+            error_msg = (
+                f"❌ 프로덕션 환경에서 필수 설정이 누락되었습니다:\n"
+                f"   {', '.join(critical_issues)}\n\n"
+                f"   .env 파일을 확인하고 필수 환경 변수를 설정하세요.\n"
+                f"   참고: env.example 파일을 참고하세요."
+            )
+            raise ValueError(error_msg)
+        
+        if warning_issues:
+            logger.warning(
+                f"⚠️ 설정 경고: {', '.join(warning_issues)}. "
+                f"일부 기능이 제한될 수 있습니다."
+            )
     
     def is_production(self) -> bool:
         """프로덕션 환경인지 확인"""
@@ -156,22 +214,32 @@ class Settings(BaseSettings):
 # 설정 인스턴스 생성
 settings = Settings()
 
-# 설정 검증 및 경고
-validation_issues = settings.validate_settings()
-if validation_issues:
-    logger.warning(
-        f"⚠️ Configuration issues detected: {', '.join(validation_issues)}. "
-        f"Please check your .env file or environment variables."
-    )
-    
+# 설정 검증 및 경고 (애플리케이션 시작 시 자동 검증)
+# 프로덕션 환경에서는 validate_and_raise()를 main.py에서 호출하여
+# 치명적 문제 시 애플리케이션 시작을 중단합니다.
+critical_issues, warning_issues = settings.validate_settings()
+if critical_issues:
     if settings.is_production():
+        # 프로덕션 환경에서는 main.py에서 validate_and_raise()를 호출하여
+        # 예외를 발생시킵니다. 여기서는 로깅만 합니다.
         logger.error(
-            f"❌ Critical configuration issues in production environment: "
-            f"{', '.join(validation_issues)}"
+            f"❌ 프로덕션 환경에서 필수 설정 누락: {', '.join(critical_issues)}"
         )
-else:
+    else:
+        logger.warning(
+            f"⚠️ 설정 문제 감지: {', '.join(critical_issues)}. "
+            f"프로덕션 배포 전 수정이 필요합니다."
+        )
+
+if warning_issues:
+    logger.warning(
+        f"⚠️ 설정 경고: {', '.join(warning_issues)}. "
+        f"일부 기능이 제한될 수 있습니다."
+    )
+
+if not critical_issues and not warning_issues:
     logger.info(
-        f"✅ Configuration loaded successfully. "
+        f"✅ 설정 검증 완료. "
         f"Environment: {settings.ENVIRONMENT}, "
         f"Debug: {settings.DEBUG}"
     )

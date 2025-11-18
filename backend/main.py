@@ -39,7 +39,17 @@ async def lifespan(app: FastAPI):
     서버 시작 및 종료 시 실행할 코드를 정의합니다.
     """
     # 1. 서버 시작 (Startup)
-    logger.info("Application starting up: Initializing database and MQTT client...")
+    logger.info("Application starting up: Validating configuration...")
+    
+    # 환경 변수 검증 (프로덕션 환경에서 필수 설정 누락 시 시작 중단)
+    try:
+        settings.validate_and_raise()
+        logger.info("✅ Configuration validation passed.")
+    except ValueError as e:
+        logger.critical(f"❌ Configuration validation failed: {e}")
+        raise  # 애플리케이션 시작 중단
+    
+    logger.info("Initializing database and MQTT client...")
     set_app_start_time()  # 애플리케이션 시작 시간 설정
     init_db()  # ✅ 데이터베이스 테이블 생성
     init_mqtt_client()  # ✅ MQTT 연결 시도 및 재시도 로직 호출
