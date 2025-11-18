@@ -1,29 +1,28 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState as _useState, useEffect as _useEffect, useMemo as _useMemo } from 'react'; 
 import { getAlerts } from '../services/alertApi';
 import type { Alert } from '../types/api';
-import { FiFilter, FiCalendar, FiSearch, FiArrowUp, FiArrowDown, FiChevronLeft, FiChevronRight } from 'react-icons/fi'; // 1. 페이지네이션 아이콘 추가
+import { FiFilter, FiCalendar, FiSearch, FiArrowUp, FiArrowDown, FiChevronLeft, FiChevronRight } from 'react-icons/fi'; 
 
-// 2. 상수 정의
-const ALERTS_PER_PAGE = 5; // 페이지당 알림 개수
+// 상수 정의
+const ALERTS_PER_PAGE = 5; 
 type AlertLevel = 'info' | 'warning' | 'error' | 'critical';
 const ALL_LEVELS: AlertLevel[] = ['critical', 'error', 'warning', 'info'];
 
 const AlertsPage: React.FC = () => {
-    // 3. 상태 정의
-    // (모든 린팅 주석은 기능적 사용으로 인해 제거했습니다. 만약 다시 발생하면 주석을 복원하십시오.)
-    const [alerts, setAlerts] = useState<Alert[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
-    const [searchTerm, setSearchTerm] = useState('');
-    const [activeLevels, setActiveLevels] = useState<Set<AlertLevel>>(new Set(ALL_LEVELS));
+    // 상태 정의
+    const [alerts, setAlerts] = _useState<Alert[]>([]);
+    const [loading, setLoading] = _useState(true);
+    const [error, setError] = _useState<string | null>(null);
+    const [searchTerm, setSearchTerm] = _useState('');
+    const [activeLevels, setActiveLevels] = _useState<Set<AlertLevel>>(new Set(ALL_LEVELS));
     
-    // 4. 페이지네이션 상태 추가
-    const [currentPage, setCurrentPage] = useState(1);
-    const [sortBy, setSortBy] = useState<'timestamp' | 'level'>('timestamp');
-    const [sortDirection, setSortDirection] = useState<'desc' | 'asc'>('desc');
+    // 페이지네이션 및 정렬 상태
+    const [currentPage, setCurrentPage] = _useState(1);
+    const [sortBy, setSortBy] = _useState<'timestamp' | 'level'>('timestamp');
+    const [sortDirection, setSortDirection] = _useState<'desc' | 'asc'>('desc');
 
-    // 5. API 호출 로직 (useEffect 내)
-    useEffect(() => {
+    // API 호출 로직 
+    _useEffect(() => {
         const fetchAlerts = async () => {
             try {
                 setLoading(true);
@@ -41,8 +40,8 @@ const AlertsPage: React.FC = () => {
         fetchAlerts();
     }, []);
 
-    // 6. 레벨 필터 토글 함수 및 정렬 핸들러 (이전과 동일)
-    const handleLevelToggle = useCallback((level: AlertLevel) => {
+    // 레벨 필터 토글 함수 (일반 함수로 유지)
+    const handleLevelToggle = (level: AlertLevel) => {
         setActiveLevels(prevLevels => {
             const newLevels = new Set(prevLevels);
             if (newLevels.has(level)) {
@@ -52,9 +51,10 @@ const AlertsPage: React.FC = () => {
             }
             return newLevels;
         });
-        setCurrentPage(1); // 필터 변경 시 1페이지로 이동
-    }, []);
+        setCurrentPage(1); 
+    };
 
+    // 정렬 핸들러 (이전과 동일)
     const handleSortChange = (key: 'timestamp' | 'level') => {
         if (sortBy === key) {
             setSortDirection(prev => (prev === 'desc' ? 'asc' : 'desc'));
@@ -62,23 +62,21 @@ const AlertsPage: React.FC = () => {
             setSortBy(key);
             setSortDirection('desc');
         }
-        setCurrentPage(1); // 정렬 변경 시 1페이지로 이동
+        setCurrentPage(1); 
     };
 
 
-    // 7. 필터링, 정렬, 페이지네이션 적용 (useMemo 로직 확장)
-    const processedAlerts = useMemo(() => {
-        // Step 1: 검색어 필터링
+    // 필터링 및 정렬된 알림 목록 생성 (useMemo 로직)
+    const processedAlerts = _useMemo(() => {
+        // Step 1 & 2: 필터링 로직
         let results = alerts;
-        if (searchTerm) {
+        if (searchTerm) { 
             const lowerCaseSearch = searchTerm.toLowerCase();
             results = alerts.filter(alert => 
                 alert.message.toLowerCase().includes(lowerCaseSearch) ||
                 alert.sensor_id.toLowerCase().includes(lowerCaseSearch)
             );
         }
-
-        // Step 2: 레벨 필터링
         if (activeLevels.size > 0 && activeLevels.size < ALL_LEVELS.length) {
             results = results.filter(alert => activeLevels.has(alert.level));
         }
@@ -90,19 +88,18 @@ const AlertsPage: React.FC = () => {
         });
         
         return sortedResults;
-    }, [alerts, searchTerm, activeLevels, sortBy, sortDirection]);
+    }, [alerts, searchTerm, activeLevels, sortBy, sortDirection]); 
     
-    // 8. 현재 페이지에 표시될 알림 계산
+    // 현재 페이지에 표시될 알림 계산
     const totalPages = Math.ceil(processedAlerts.length / ALERTS_PER_PAGE);
     
-    const currentAlerts = useMemo(() => {
+    const currentAlerts = _useMemo(() => {
         const startIndex = (currentPage - 1) * ALERTS_PER_PAGE;
         const endIndex = startIndex + ALERTS_PER_PAGE;
         return processedAlerts.slice(startIndex, endIndex);
     }, [processedAlerts, currentPage]);
 
-
-    // 9. 로딩 및 에러 상태 표시
+    // 로딩 및 에러 상태 표시
     if (loading) {
         return <div className="text-center p-6 text-lg">알림 목록을 불러오는 중입니다...</div>;
     }
@@ -111,7 +108,7 @@ const AlertsPage: React.FC = () => {
         return <div className="text-center p-6 text-red-600 font-bold">오류: {error}</div>;
     }
 
-    // 10. 페이지네이션 버튼 핸들러
+    // 페이지네이션 버튼 핸들러
     const goToPage = (page: number) => {
         if (page >= 1 && page <= totalPages) {
             setCurrentPage(page);
@@ -119,7 +116,7 @@ const AlertsPage: React.FC = () => {
     };
 
 
-    // 11. 컴포넌트 렌더링
+    // 컴포넌트 렌더링
     return (
         <div>
             <h1 className="text-3xl font-bold mb-6 text-gray-800">알림 목록</h1>
@@ -198,7 +195,7 @@ const AlertsPage: React.FC = () => {
                 )}
             </div>
 
-            {/* 12. 페이지네이션 컨트롤 */}
+            {/* 페이지네이션 컨트롤 */}
             {totalPages > 1 && (
                 <div className="flex justify-center mt-6 space-x-2">
                     <button
