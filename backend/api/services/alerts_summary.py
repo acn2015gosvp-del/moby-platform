@@ -10,6 +10,7 @@ from typing import Dict, Optional
 
 from backend.api.core.exceptions import LLMSummaryError
 from .llm_client import summarize_alert
+from .cache import get_cache, cache_key
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +18,7 @@ logger = logging.getLogger(__name__)
 def generate_alert_summary(alert_data: Dict) -> Optional[str]:
     """
     알림 데이터를 받아 LLM 요약을 생성합니다. (동기 버전)
+    캐싱을 통해 동일한 알림에 대한 중복 요약 생성을 방지합니다.
     
     Args:
         alert_data: 요약할 알림 데이터 (dict)
@@ -37,6 +39,19 @@ def generate_alert_summary(alert_data: Dict) -> Optional[str]:
         alert_id = alert_data.get("id", "unknown")
         sensor_id = alert_data.get("sensor_id", "unknown")
         
+        # 캐시 키 생성 (alert_id 기반)
+        cache = get_cache()
+        cache_key_str = cache_key("llm_summary", alert_id=alert_id)
+        
+        # 캐시에서 조회
+        cached_summary = cache.get(cache_key_str)
+        if cached_summary is not None:
+            logger.debug(
+                f"generate_alert_summary: 캐시에서 조회. "
+                f"alert_id={alert_id}"
+            )
+            return cached_summary
+        
         logger.debug(
             f"generate_alert_summary: LLM 요약 생성 시작. "
             f"alert_id={alert_id}, sensor_id={sensor_id}"
@@ -45,6 +60,8 @@ def generate_alert_summary(alert_data: Dict) -> Optional[str]:
         summary = summarize_alert(alert_data)
         
         if summary:
+            # 캐시에 저장 (TTL: 1시간)
+            cache.set(cache_key_str, summary, ttl=3600.0)
             logger.info(
                 f"generate_alert_summary: LLM 요약 생성 성공. "
                 f"alert_id={alert_id}, summary_length={len(summary)}"

@@ -16,6 +16,7 @@ from .services.schemas.models.core.logger import get_logger
 from backend.api.services.mqtt_client import mqtt_manager
 from backend.api.services.influx_client import query_sensor_status
 from backend.api.services.schemas.models.core.config import settings
+from backend.api.services.cache import get_cache, cache_key
 
 router = APIRouter()
 logger = get_logger(__name__)
@@ -221,6 +222,16 @@ async def get_sensor_status() -> SuccessResponse[SensorStatusResponse]:
         실제 구현 시 데이터베이스나 센서 관리 시스템에서 조회해야 합니다.
     """
     try:
+        # 캐시 키 생성
+        cache = get_cache()
+        cache_key_str = cache_key("sensor_status", bucket=settings.INFLUX_BUCKET)
+        
+        # 캐시에서 조회 (TTL: 30초)
+        cached_result = cache.get(cache_key_str)
+        if cached_result is not None:
+            logger.debug("Sensor status retrieved from cache")
+            return cached_result
+        
         # InfluxDB에서 센서 상태 조회
         # 최근 5분 내 데이터가 있는 센서를 활성으로 간주
         sensor_status = query_sensor_status(
@@ -247,7 +258,7 @@ async def get_sensor_status() -> SuccessResponse[SensorStatusResponse]:
             f"Total: {total_count}, Active: {active_count}, Inactive: {inactive_count}"
         )
         
-        return SuccessResponse(
+        response = SuccessResponse(
             success=True,
             data=SensorStatusResponse(
                 status=status_str,
@@ -257,6 +268,11 @@ async def get_sensor_status() -> SuccessResponse[SensorStatusResponse]:
             ),
             message="Sensor status retrieved successfully"
         )
+        
+        # 캐시에 저장 (TTL: 30초)
+        cache.set(cache_key_str, response, ttl=30.0)
+        
+        return response
         
     except Exception as e:
         logger.exception(f"Unexpected error while retrieving sensor status: {e}")

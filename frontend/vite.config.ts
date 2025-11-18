@@ -20,4 +20,19 @@ export default defineConfig({
       },
     },
   },
+  build: {
+    // 번들 크기 최적화
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          // Vendor 라이브러리 분리
+          'react-vendor': ['react', 'react-dom', 'react-router-dom'],
+          // 큰 라이브러리 분리
+          'ui-vendor': ['axios'],
+        },
+      },
+    },
+    // 청크 크기 경고 임계값 증가 (500KB)
+    chunkSizeWarningLimit: 500,
+  },
 })

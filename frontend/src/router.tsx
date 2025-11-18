@@ -1,24 +1,44 @@
 /**
  * 라우터 설정
+ * 코드 스플리팅 및 레이지 로딩 적용
  */
 
+import { lazy, Suspense, type ReactNode } from 'react'
 import { createBrowserRouter } from 'react-router-dom'
 import App from './App'
-import Dashboard from './pages/Dashboard'
-import Alerts from './pages/Alerts'
-import Sensors from './pages/Sensors'
-import Login from './pages/Login'
-import Register from './pages/Register'
+import Loading from './components/common/Loading'
 import ProtectedRoute from './components/auth/ProtectedRoute'
+
+// 레이지 로딩을 위한 컴포넌트
+const Dashboard = lazy(() => import('./pages/Dashboard'))
+const Alerts = lazy(() => import('./pages/Alerts'))
+const Sensors = lazy(() => import('./pages/Sensors'))
+const Login = lazy(() => import('./pages/Login'))
+const Register = lazy(() => import('./pages/Register'))
+
+// 로딩 래퍼 컴포넌트
+const LazyWrapper = ({ children }: { children: ReactNode }) => (
+  <Suspense fallback={<Loading message="페이지를 불러오는 중..." />}>
+    {children}
+  </Suspense>
+)
 
 export const router = createBrowserRouter([
   {
     path: '/login',
-    element: <Login />,
+    element: (
+      <LazyWrapper>
+        <Login />
+      </LazyWrapper>
+    ),
   },
   {
     path: '/register',
-    element: <Register />,
+    element: (
+      <LazyWrapper>
+        <Register />
+      </LazyWrapper>
+    ),
   },
   {
     path: '/',
@@ -30,15 +50,27 @@ export const router = createBrowserRouter([
     children: [
       {
         index: true,
-        element: <Dashboard />,
+        element: (
+          <LazyWrapper>
+            <Dashboard />
+          </LazyWrapper>
+        ),
       },
       {
         path: 'alerts',
-        element: <Alerts />,
+        element: (
+          <LazyWrapper>
+            <Alerts />
+          </LazyWrapper>
+        ),
       },
       {
         path: 'sensors',
-        element: <Sensors />,
+        element: (
+          <LazyWrapper>
+            <Sensors />
+          </LazyWrapper>
+        ),
       },
     ],
   },
