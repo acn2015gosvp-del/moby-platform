@@ -42,6 +42,7 @@ class UserResponse(UserBase):
     """사용자 정보 응답 스키마"""
     id: int
     is_active: bool
+    role: str
     created_at: datetime
     
     class Config:

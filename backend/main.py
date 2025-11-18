@@ -18,6 +18,9 @@ from prometheus_fastapi_instrumentator import Instrumentator
 # Rate Limiting
 from backend.api.middleware.rate_limit import RateLimitMiddleware
 
+# CSRF Protection
+from backend.api.middleware.csrf import CSRFMiddleware
+
 # 로깅 설정
 setup_logging(
     log_level=settings.LOG_LEVEL,
@@ -63,6 +66,14 @@ app.add_middleware(
     default_limit=100,  # 기본: 100 requests per minute
     window_seconds=60,
 )
+
+# CSRF 방지 미들웨어 추가 (개발 환경에서는 선택적)
+if settings.is_production():
+    app.add_middleware(
+        CSRFMiddleware,
+        secret_key=settings.SECRET_KEY,
+        cookie_name="csrf_token"
+    )
 
 # Routers
 app.include_router(auth_router, prefix="/auth", tags=["Authentication"])

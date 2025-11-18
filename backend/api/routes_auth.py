@@ -25,6 +25,8 @@ from backend.api.services.schemas.user_schema import (
 from backend.api.models.user import User
 from backend.api.core.responses import SuccessResponse, ErrorResponse
 from backend.api.core.api_exceptions import BadRequestError, UnauthorizedError
+from backend.api.core.permissions import require_permissions, require_role, get_user_permissions
+from backend.api.models.role import Role, Permission
 from backend.api.services.schemas.models.core.logger import get_logger
 
 router = APIRouter()
@@ -90,12 +92,14 @@ async def register(
         # 비밀번호 해싱
         hashed_password = get_password_hash(user_data.password)
         
-        # 사용자 생성
+        # 사용자 생성 (기본 역할: USER)
+        from backend.api.models.role import Role
         db_user = User(
             email=user_data.email,
             username=user_data.username,
             hashed_password=hashed_password,
-            is_active=True
+            is_active=True,
+            role=Role.USER.value  # 기본 역할 설정
         )
         db.add(db_user)
         db.commit()
@@ -110,6 +114,7 @@ async def register(
                 email=db_user.email,
                 username=db_user.username,
                 is_active=db_user.is_active,
+                role=db_user.role,
                 created_at=db_user.created_at
             ),
             message="회원가입이 완료되었습니다."
@@ -255,6 +260,7 @@ async def get_current_user(
                 email=user.email,
                 username=user.username,
                 is_active=user.is_active,
+                role=user.role,
                 created_at=user.created_at
             ),
             message="사용자 정보 조회 성공"
@@ -332,4 +338,164 @@ async def refresh_token(
     except Exception as e:
         logger.exception(f"토큰 갱신 중 오류: {e}")
         raise UnauthorizedError(message="토큰을 갱신할 수 없습니다.")
+
+
+@router.get(
+    "/permissions",
+    response_model=SuccessResponse[dict],
+    summary="현재 사용자 권한 조회",
+    description="""
+    현재 로그인한 사용자의 권한 목록을 조회합니다.
+    
+    **인증 필요**: JWT 토큰이 필요합니다.
+    """,
+)
+async def get_my_permissions(
+    current_user: User = Depends(get_current_user)
+) -> SuccessResponse[dict]:
+    """
+    현재 사용자의 권한 목록을 반환합니다.
+    
+    Args:
+        current_user: 현재 로그인한 사용자
+        
+    Returns:
+        SuccessResponse[dict]: 권한 정보
+    """
+    permissions = get_user_permissions(current_user)
+    return SuccessResponse(
+        success=True,
+        data={
+            "role": current_user.role,
+            "permissions": [p.value for p in permissions]
+        },
+        message="권한 정보 조회 성공"
+    )
+
+
+@router.get(
+    "/users",
+    response_model=SuccessResponse[List[UserResponse]],
+    summary="사용자 목록 조회 (관리자 전용)",
+    description="""
+    모든 사용자 목록을 조회합니다. 관리자만 접근 가능합니다.
+    
+    **인증 필요**: JWT 토큰 및 관리자 권한 필요
+    """,
+)
+async def get_users(
+    current_user: User = Depends(require_permissions(Permission.USER_READ)),
+    db: Session = Depends(get_db),
+    skip: int = 0,
+    limit: int = 100
+) -> SuccessResponse[List[UserResponse]]:
+    """
+    사용자 목록을 반환합니다. (관리자 전용)
+    
+    Args:
+        current_user: 현재 로그인한 사용자 (권한 체크됨)
+        db: 데이터베이스 세션
+        skip: 건너뛸 레코드 수
+        limit: 반환할 최대 레코드 수
+        
+    Returns:
+        SuccessResponse[List[UserResponse]]: 사용자 목록
+    """
+    users = db.query(User).offset(skip).limit(limit).all()
+    return SuccessResponse(
+        success=True,
+        data=[
+            UserResponse(
+                id=user.id,
+                email=user.email,
+                username=user.username,
+                is_active=user.is_active,
+                role=user.role,
+                created_at=user.created_at
+            )
+            for user in users
+        ],
+        message="사용자 목록 조회 성공"
+    )
+
+
+@router.patch(
+    "/users/{user_id}/role",
+    response_model=SuccessResponse[UserResponse],
+    summary="사용자 역할 변경 (관리자 전용)",
+    description="""
+    사용자의 역할을 변경합니다. 관리자만 접근 가능합니다.
+    
+    **인증 필요**: JWT 토큰 및 관리자 권한 필요
+    """,
+)
+async def update_user_role(
+    user_id: int,
+    new_role: str,
+    current_user: User = Depends(require_permissions(Permission.USER_WRITE)),
+    db: Session = Depends(get_db)
+) -> SuccessResponse[UserResponse]:
+    """
+    사용자의 역할을 변경합니다. (관리자 전용)
+    
+    Args:
+        user_id: 변경할 사용자 ID
+        new_role: 새로운 역할 (admin, user, viewer)
+        current_user: 현재 로그인한 사용자 (권한 체크됨)
+        db: 데이터베이스 세션
+        
+    Returns:
+        SuccessResponse[UserResponse]: 업데이트된 사용자 정보
+        
+    Raises:
+        BadRequestError: 잘못된 역할 또는 사용자를 찾을 수 없는 경우
+    """
+    try:
+        # 역할 유효성 검증
+        try:
+            role = Role(new_role)
+        except ValueError:
+            raise BadRequestError(
+                message=f"Invalid role: {new_role}. Allowed values: {[r.value for r in Role]}",
+                field="role"
+            )
+        
+        # 사용자 조회
+        user = db.query(User).filter(User.id == user_id).first()
+        if user is None:
+            raise BadRequestError(
+                message=f"User with ID {user_id} not found",
+                field="user_id"
+            )
+        
+        # 역할 변경
+        user.role = role.value
+        db.commit()
+        db.refresh(user)
+        
+        logger.info(
+            f"User role updated: {user.email} (ID: {user.id}) "
+            f"by {current_user.email} (ID: {current_user.id}) "
+            f"to {role.value}"
+        )
+        
+        return SuccessResponse(
+            success=True,
+            data=UserResponse(
+                id=user.id,
+                email=user.email,
+                username=user.username,
+                is_active=user.is_active,
+                role=user.role,
+                created_at=user.created_at
+            ),
+            message="사용자 역할이 변경되었습니다."
+        )
+        
+    except BadRequestError:
+        raise
+    except Exception as e:
+        logger.exception(f"사용자 역할 변경 중 오류: {e}")
+        db.rollback()
+        raise BadRequestError(message="사용자 역할 변경 중 오류가 발생했습니다.")
 

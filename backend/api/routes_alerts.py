@@ -15,6 +15,9 @@ from .services.notifier_stub import send_alert
 from .services.alert_storage import save_alert, get_latest_alerts
 from .core.responses import SuccessResponse, ErrorResponse
 from .core.api_exceptions import BadRequestError, InternalServerError, NotFoundError
+from .core.permissions import require_permissions
+from .models.role import Permission
+from .models.user import User
 from .services.schemas.models.core.logger import get_logger
 from backend.api.services.database import get_db
 from sqlalchemy.orm import Session
@@ -92,7 +95,9 @@ def get_current_timestamp() -> str:
 async def create_alert(
     alert_request: AlertRequest,
     background_tasks: BackgroundTasks,
-    timestamp: str = Depends(get_current_timestamp)
+    current_user: User = Depends(require_permissions(Permission.ALERT_WRITE)),
+    timestamp: str = Depends(get_current_timestamp),
+    db: Session = Depends(get_db)
 ) -> SuccessResponse[AlertPayloadModel]:
     """
     알림을 생성하고 평가합니다.
@@ -256,6 +261,7 @@ async def get_latest_alerts_endpoint(
     limit: int = 10,
     sensor_id: Optional[str] = None,
     level: Optional[str] = None,
+    current_user: User = Depends(require_permissions(Permission.ALERT_READ)),
     db: Session = Depends(get_db)
 ) -> SuccessResponse[List[AlertPayloadModel]]:
     """

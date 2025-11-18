@@ -11,6 +11,9 @@ from pydantic import BaseModel, Field
 
 from backend.api.core.responses import SuccessResponse, ErrorResponse
 from backend.api.core.api_exceptions import BadRequestError, InternalServerError
+from backend.api.core.permissions import require_permissions
+from backend.api.models.role import Permission
+from backend.api.models.user import User
 from backend.api.services.grafana_client import get_grafana_client, GrafanaClient
 from backend.api.services.schemas.models.core.logger import get_logger
 
@@ -82,6 +85,7 @@ async def check_grafana_connection(
 @router.post("/datasources", response_model=SuccessResponse, status_code=status.HTTP_201_CREATED)
 async def create_datasource(
     request: DatasourceCreateRequest,
+    current_user: User = Depends(require_permissions(Permission.GRAFANA_WRITE)),
     client: GrafanaClient = Depends(get_grafana_client_dependency)
 ):
     """
@@ -115,6 +119,7 @@ async def create_datasource(
 @router.get("/datasources/{name}", response_model=SuccessResponse)
 async def get_datasource(
     name: str,
+    current_user: User = Depends(require_permissions(Permission.GRAFANA_READ)),
     client: GrafanaClient = Depends(get_grafana_client_dependency)
 ):
     """
@@ -148,6 +153,7 @@ async def get_datasource(
 @router.post("/dashboards", response_model=SuccessResponse, status_code=status.HTTP_201_CREATED)
 async def create_dashboard(
     request: DashboardCreateRequest,
+    current_user: User = Depends(require_permissions(Permission.GRAFANA_WRITE)),
     client: GrafanaClient = Depends(get_grafana_client_dependency)
 ):
     """

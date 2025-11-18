@@ -21,6 +21,21 @@ const apiClient = axios.create({
 })
 
 /**
+ * CSRF 토큰 가져오기
+ */
+function getCsrfToken(): string | null {
+  // 쿠키에서 CSRF 토큰 읽기
+  const cookies = document.cookie.split(';')
+  for (const cookie of cookies) {
+    const [name, value] = cookie.trim().split('=')
+    if (name === 'csrf_token') {
+      return decodeURIComponent(value)
+    }
+  }
+  return null
+}
+
+/**
  * 요청 인터셉터
  */
 apiClient.interceptors.request.use(
@@ -30,6 +45,15 @@ apiClient.interceptors.request.use(
     if (token) {
       config.headers.Authorization = `Bearer ${token}`
     }
+    
+    // CSRF 토큰 추가 (GET 요청이 아닌 경우)
+    if (config.method && !['get', 'head', 'options'].includes(config.method.toLowerCase())) {
+      const csrfToken = getCsrfToken()
+      if (csrfToken) {
+        config.headers['X-CSRF-Token'] = csrfToken
+      }
+    }
+    
     return config
   },
   (error) => {
