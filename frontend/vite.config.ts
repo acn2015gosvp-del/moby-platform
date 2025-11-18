@@ -34,5 +34,13 @@ export default defineConfig({
     },
     // 청크 크기 경고 임계값 증가 (500KB)
     chunkSizeWarningLimit: 500,
+    // 이미지 최적화 설정
+    assetsInlineLimit: 4096, // 4KB 이하 이미지는 base64로 인라인화
+  },
+  // 이미지 최적화 설정
+  assetsInclude: ['**/*.png', '**/*.jpg', '**/*.jpeg', '**/*.gif', '**/*.svg', '**/*.webp'],
+  optimizeDeps: {
+    // 이미지 관련 의존성 최적화
+    include: [],
   },
 })
