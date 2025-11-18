@@ -8,7 +8,7 @@ import logging
 import asyncio
 from typing import Dict, Optional
 
-from ..core.exceptions import LLMSummaryError
+from backend.api.core.exceptions import LLMSummaryError
 from .llm_client import summarize_alert
 
 logger = logging.getLogger(__name__)

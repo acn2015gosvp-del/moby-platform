@@ -76,10 +76,12 @@ class MqttClientManager:
     def _on_connect(self, client, userdata, flags, rc, properties=None):
         """연결 성공/실패 콜백"""
         if rc == 0:
+            # paho-mqtt v2.0+에서는 flags가 ConnectFlags 객체입니다 (딕셔너리가 아님)
+            session_present = getattr(flags, 'session_present', 0)
             logger.info(
                 "✅ MQTT connected successfully. "
                 f"Host: {self.host}:{self.port}, "
-                f"Session present: {flags.get('session present', 0)}"
+                f"Session present: {session_present}"
             )
             self.connection_attempt_count = 0
             self.is_connecting = False

@@ -20,7 +20,7 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
-from ..core.exceptions import (
+from backend.api.core.exceptions import (
     AlertEngineError,
     AlertValidationError,
     AlertProcessingError,

@@ -4,7 +4,7 @@
 
 import { useState, useEffect } from 'react'
 import { getLatestAlerts } from '@/services/alerts/alertService'
-import { Alert } from '@/types/alert'
+import type { Alert } from '@/types/alert'
 import Loading from '@/components/common/Loading'
 import { formatRelativeTime } from '@/utils/formatters'
 

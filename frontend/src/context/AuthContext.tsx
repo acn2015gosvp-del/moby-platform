@@ -2,8 +2,8 @@
  * 인증 Context
  */
 
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react'
-import { User, LoginRequest, RegisterRequest } from '@/types/auth'
+import React, { createContext, useContext, useState, useEffect, type ReactNode } from 'react'
+import type { User, LoginRequest, RegisterRequest } from '@/types/auth'
 import * as authService from '@/services/auth/authService'
 import apiClient from '@/services/api/client'
 
@@ -71,7 +71,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   // 회원가입
   const handleRegister = async (data: RegisterRequest) => {
     try {
-      const newUser = await authService.register(data)
+      await authService.register(data)
       // 회원가입 후 자동 로그인
       await handleLogin({ email: data.email, password: data.password })
     } catch (error) {

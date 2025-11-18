@@ -5,8 +5,8 @@
 import { useState, useEffect } from 'react'
 import { getSensorStatus } from '@/services/sensors/sensorService'
 import { getLatestAlerts } from '@/services/alerts/alertService'
-import { SensorStatus } from '@/types/sensor'
-import { Alert } from '@/types/alert'
+import type { SensorStatus } from '@/types/sensor'
+import type { Alert } from '@/types/alert'
 import Loading from '@/components/common/Loading'
 import { formatRelativeTime } from '@/utils/formatters'
 

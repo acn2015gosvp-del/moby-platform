@@ -2,7 +2,7 @@
  * 메인 레이아웃 컴포넌트
  */
 
-import { ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import Header from './Header'
 import Sidebar from './Sidebar'
 

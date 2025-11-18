@@ -3,8 +3,8 @@
  */
 
 import apiClient from '../api/client'
-import { LoginRequest, RegisterRequest, Token, User } from '@/types/auth'
-import { SuccessResponse } from '@/types/api'
+import type { LoginRequest, RegisterRequest, Token, User } from '@/types/auth'
+import type { SuccessResponse } from '@/types/api'
 
 const AUTH_ENDPOINTS = {
   REGISTER: '/auth/register',

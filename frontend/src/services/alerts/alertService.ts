@@ -3,8 +3,8 @@
  */
 
 import apiClient from '../api/client'
-import { Alert, AlertRequest } from '@/types/alert'
-import { SuccessResponse } from '@/types/api'
+import type { Alert, AlertRequest } from '@/types/alert'
+import type { SuccessResponse } from '@/types/api'
 
 /**
  * 알림 생성 및 평가

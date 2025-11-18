@@ -4,7 +4,7 @@
 
 import { useState, useEffect } from 'react'
 import { getSensorStatus } from '@/services/sensors/sensorService'
-import { SensorStatus } from '@/types/sensor'
+import type { SensorStatus } from '@/types/sensor'
 import Loading from '@/components/common/Loading'
 
 function Sensors() {

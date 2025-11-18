@@ -3,8 +3,8 @@
  */
 
 import apiClient from '../api/client'
-import { Sensor, SensorStatus, SensorDataResponse } from '@/types/sensor'
-import { SuccessResponse } from '@/types/api'
+import type { Sensor, SensorStatus, SensorDataResponse } from '@/types/sensor'
+import type { SuccessResponse } from '@/types/api'
 
 /**
  * 센서 데이터 수신

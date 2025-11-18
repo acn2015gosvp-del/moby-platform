@@ -2,16 +2,17 @@
  * Axios API 클라이언트 설정
  */
 
-import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios'
-import { ErrorResponse } from '@/types/api'
+import axios, { type AxiosResponse } from 'axios'
+import type { ErrorResponse } from '@/types/api'
 
 // 환경 변수에서 API URL 가져오기
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
+// 프록시를 사용하므로 /api로 설정 (vite.config.ts의 proxy 설정 사용)
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api'
 
 /**
  * Axios 인스턴스 생성
  */
-const apiClient: AxiosInstance = axios.create({
+const apiClient = axios.create({
   baseURL: API_BASE_URL,
   timeout: 10000,
   headers: {
