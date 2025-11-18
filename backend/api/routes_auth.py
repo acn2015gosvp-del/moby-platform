@@ -266,3 +266,70 @@ async def get_current_user(
         logger.exception(f"사용자 정보 조회 중 오류: {e}")
         raise UnauthorizedError(message="사용자 정보를 조회할 수 없습니다.")
 
+
+@router.post(
+    "/refresh",
+    response_model=SuccessResponse[Token],
+    summary="토큰 갱신",
+    description="""
+    JWT 토큰을 갱신합니다.
+    
+    **인증 필요**: 유효한 JWT 토큰이 필요합니다.
+    
+    **응답:**
+    - `200 OK`: 새로운 토큰 반환
+    - `401 Unauthorized`: 토큰이 유효하지 않음
+    """,
+)
+async def refresh_token(
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db)
+) -> SuccessResponse[Token]:
+    """
+    토큰 갱신 엔드포인트
+    
+    Args:
+        token: 현재 JWT 토큰 (의존성 주입)
+        db: 데이터베이스 세션
+        
+    Returns:
+        SuccessResponse[Token]: 새로운 JWT 토큰
+        
+    Raises:
+        UnauthorizedError: 토큰이 유효하지 않거나 사용자를 찾을 수 없는 경우
+    """
+    try:
+        # 토큰 디코딩
+        payload = decode_access_token(token)
+        if payload is None:
+            raise UnauthorizedError(message="유효하지 않은 토큰입니다.")
+        
+        email: str = payload.get("sub")
+        if email is None:
+            raise UnauthorizedError(message="토큰에 이메일 정보가 없습니다.")
+        
+        # 사용자 조회 및 활성화 확인
+        user = db.query(User).filter(User.email == email).first()
+        if user is None:
+            raise UnauthorizedError(message="사용자를 찾을 수 없습니다.")
+        
+        if not user.is_active:
+            raise UnauthorizedError(message="비활성화된 계정입니다.")
+        
+        # 새로운 토큰 생성
+        new_access_token = create_access_token(data={"sub": user.email})
+        
+        logger.info(f"토큰 갱신 성공: {user.email} (ID: {user.id})")
+        
+        return SuccessResponse(
+            success=True,
+            data=Token(access_token=new_access_token),
+            message="토큰이 갱신되었습니다."
+        )
+        
+    except UnauthorizedError:
+        raise
+    except Exception as e:
+        logger.exception(f"토큰 갱신 중 오류: {e}")
+        raise UnauthorizedError(message="토큰을 갱신할 수 없습니다.")
+

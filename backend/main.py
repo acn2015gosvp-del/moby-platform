@@ -15,6 +15,9 @@ from backend.api.services.schemas.models.core.config import settings
 # Prometheus 메트릭
 from prometheus_fastapi_instrumentator import Instrumentator
 
+# Rate Limiting
+from backend.api.middleware.rate_limit import RateLimitMiddleware
+
 # 로깅 설정
 setup_logging(
     log_level=settings.LOG_LEVEL,
@@ -52,6 +55,13 @@ app = FastAPI(
     title="MOBY Backend API",
     description="Industrial IoT & Predictive Maintenance Platform",
     version="1.0.0",
+)
+
+# Rate Limiting 미들웨어 추가
+app.add_middleware(
+    RateLimitMiddleware,
+    default_limit=100,  # 기본: 100 requests per minute
+    window_seconds=60,
 )
 
 # Routers
