@@ -59,6 +59,7 @@ const useWebSocket = (httpUrl: string) => {
     };
     
     // 6. 에러 처리 (close 호출 제거)
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     ws.current.onerror = (error) => {
     };
 

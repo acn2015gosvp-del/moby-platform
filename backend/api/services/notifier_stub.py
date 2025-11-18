@@ -30,3 +30,5 @@ class NotifierService:
         
         # 테스트 코드의 기대를 만족시키기 위해 True를 반환합니다.
         return True
+        
+notifier = NotifierService()
