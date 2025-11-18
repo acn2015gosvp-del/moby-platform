@@ -47,13 +47,19 @@ LOG_LEVEL=INFO
 **터미널 1을 열고:**
 
 ```bash
-# 프로젝트 루트 디렉토리에서
-uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
+# ⚠️ 중요: 프로젝트 루트 디렉토리에서 실행해야 합니다!
+# backend 디렉토리가 아닌 moby-platform 디렉토리에서 실행하세요.
+
+# 프로젝트 루트 디렉토리로 이동
+cd C:\Users\USER\projects\moby-platform
+
+# Backend 서버 실행 (포트 8001)
+uvicorn backend.main:app --reload --host 0.0.0.0 --port 8001
 ```
 
 **성공 메시지:**
 ```
-INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     Uvicorn running on http://0.0.0.0:8001 (Press CTRL+C to quit)
 INFO:     Started reloader process
 INFO:     Started server process
 INFO:     Waiting for application startup.
@@ -61,10 +67,10 @@ INFO:     Application startup complete.
 ```
 
 **확인 방법:**
-브라우저에서 http://localhost:8000 접속 → `{"status":"ok","message":"MOBY backend running"}` 표시되면 성공!
+브라우저에서 http://localhost:8001 접속 → `{"status":"ok","message":"MOBY backend running"}` 표시되면 성공!
 
 **API 문서 확인:**
-http://localhost:8000/docs 접속 → Swagger UI가 표시되면 성공!
+http://localhost:8001/docs 접속 → Swagger UI가 표시되면 성공!
 
 ---
 
