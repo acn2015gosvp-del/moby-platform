@@ -88,15 +88,35 @@ async def generate_report(
         SuccessResponse[ReportResponse]: 생성된 보고서
     """
     try:
-        # 기간 검증
-        try:
-            start_dt = datetime.strptime(request.period_start, "%Y-%m-%d %H:%M:%S")
-            end_dt = datetime.strptime(request.period_end, "%Y-%m-%d %H:%M:%S")
-        except ValueError as e:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"날짜 형식이 올바르지 않습니다. YYYY-MM-DD HH:MM:SS 형식을 사용하세요. 오류: {e}"
-            )
+        # 기간 검증 (여러 날짜 형식 지원)
+        def parse_datetime(date_str: str) -> datetime:
+            """여러 날짜 형식을 지원하는 파서"""
+            # 형식 목록 (우선순위 순)
+            formats = [
+                "%Y-%m-%d %H:%M:%S",  # YYYY-MM-DD HH:MM:SS
+                "%Y-%m-%dT%H:%M:%S",  # YYYY-MM-DDTHH:MM:SS (ISO 형식)
+                "%Y-%m-%d %H:%M",     # YYYY-MM-DD HH:MM
+                "%Y-%m-%dT%H:%M",     # YYYY-MM-DDTHH:MM
+                "%Y-%m-%d %H:%M:%S.%f",  # 마이크로초 포함
+                "%Y-%m-%dT%H:%M:%S.%f",  # ISO 형식 + 마이크로초
+            ]
+            
+            for fmt in formats:
+                try:
+                    return datetime.strptime(date_str, fmt)
+                except ValueError:
+                    continue
+            
+            # ISO 형식으로 시도 (fromisoformat)
+            try:
+                return datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+            except ValueError:
+                pass
+            
+            raise ValueError(f"날짜 형식을 파싱할 수 없습니다: {date_str}")
+        
+        start_dt = parse_datetime(request.period_start)
+        end_dt = parse_datetime(request.period_end)
         
         if end_dt <= start_dt:
             raise HTTPException(
@@ -119,6 +139,10 @@ async def generate_report(
         
         # 보고서 생성
         try:
+            # 보고서 생성기 인스턴스 리셋 (모델 변경 시 필요)
+            from backend.api.services.report_generator import reset_report_generator
+            reset_report_generator()
+            
             generator = get_report_generator()
             report_content = generator.generate_report(report_data)
         except ImportError as e:
@@ -208,13 +232,32 @@ async def _collect_report_data(
         level=None
     )
     
-    # 기간 필터링
-    try:
-        start_dt = datetime.strptime(period_start, "%Y-%m-%d %H:%M:%S")
-        end_dt = datetime.strptime(period_end, "%Y-%m-%d %H:%M:%S")
-    except ValueError:
-        start_dt = datetime.fromisoformat(period_start.replace('Z', '+00:00'))
-        end_dt = datetime.fromisoformat(period_end.replace('Z', '+00:00'))
+    # 기간 필터링 (parse_datetime 함수 재사용)
+    def parse_datetime_for_filter(date_str: str) -> datetime:
+        """여러 날짜 형식을 지원하는 파서 (필터링용)"""
+        formats = [
+            "%Y-%m-%d %H:%M:%S",  # YYYY-MM-DD HH:MM:SS
+            "%Y-%m-%dT%H:%M:%S",  # YYYY-MM-DDTHH:MM:SS (ISO 형식)
+            "%Y-%m-%d %H:%M",     # YYYY-MM-DD HH:MM
+            "%Y-%m-%dT%H:%M",     # YYYY-MM-DDTHH:MM
+        ]
+        
+        for fmt in formats:
+            try:
+                return datetime.strptime(date_str, fmt)
+            except ValueError:
+                continue
+        
+        # ISO 형식으로 시도
+        try:
+            return datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+        except ValueError:
+            pass
+        
+        raise ValueError(f"날짜 형식을 파싱할 수 없습니다: {date_str}")
+    
+    start_dt = parse_datetime_for_filter(period_start)
+    end_dt = parse_datetime_for_filter(period_end)
     
     alerts = []
     for alert in all_alerts:
@@ -238,6 +281,12 @@ async def _collect_report_data(
     if_anomalies = []
     
     for alert in alerts:
+        details = alert.get("details", {})
+        if not isinstance(details, dict):
+            details = {}
+        
+        # 원본 노트북 형식에 맞춘 alarms 데이터 구조
+        # 원본: {"timestamp": "...", "sensor": "...", "value": 52.3, "threshold": 50.0, "level": "WARNING"}
         alarm_data = {
             "timestamp": alert.get("ts", ""),
             "sensor": alert.get("sensor_id", ""),
@@ -245,32 +294,47 @@ async def _collect_report_data(
             "message": alert.get("message", "")
         }
         
-        details = alert.get("details", {})
-        if isinstance(details, dict):
-            # MLP 이상 탐지 확인
-            if include_mlp_anomalies and "vector" in details:
-                mlp_anomalies.append({
-                    "timestamp": alert.get("ts", ""),
-                    "type": details.get("type", "MLP_composite"),
-                    "vector": details.get("vector", []),
-                    "vector_magnitude": details.get("norm", 0.0),
-                    "threshold": details.get("threshold", 0.5),
-                    "component_labels": details.get("meta", {}).get("component_labels", []) if isinstance(details.get("meta"), dict) else []
-                })
-            
-            # Isolation Forest 이상 탐지 확인
-            if include_if_anomalies and "anomaly_score" in details:
-                if_anomalies.append({
-                    "start_time": alert.get("ts", ""),
-                    "anomaly_score": details.get("anomaly_score", 0.0),
-                    "threshold": details.get("threshold", -0.15),
-                    "key_features": details.get("meta", {}) if isinstance(details.get("meta"), dict) else {}
-                })
+        # details에서 value와 threshold 추출 (원본 형식에 맞춤)
+        if "value" in details:
+            alarm_data["value"] = details.get("value")
+        if "threshold" in details:
+            alarm_data["threshold"] = details.get("threshold")
         
         alarms.append(alarm_data)
+        
+        # MLP 이상 탐지 확인
+        if include_mlp_anomalies and "vector" in details:
+            mlp_anomalies.append({
+                "timestamp": alert.get("ts", ""),
+                "type": details.get("type", "MLP_composite"),
+                "vector": details.get("vector", []),
+                "vector_magnitude": details.get("norm", 0.0),
+                "threshold": details.get("threshold", 0.5),
+                "component_labels": details.get("meta", {}).get("component_labels", []) if isinstance(details.get("meta"), dict) else []
+            })
+        
+        # Isolation Forest 이상 탐지 확인 (원본 형식에 맞춤)
+        if include_if_anomalies and "anomaly_score" in details:
+            if_anomaly = {
+                "start_time": alert.get("ts", ""),
+                "anomaly_score": details.get("anomaly_score", 0.0),
+                "threshold": details.get("threshold", -0.15),
+                "key_features": details.get("meta", {}) if isinstance(details.get("meta"), dict) else {}
+            }
+            
+            # 원본 노트북 형식에 맞춰 추가 필드 포함
+            if "end_time" in details:
+                if_anomaly["end_time"] = details.get("end_time")
+            if "duration_minutes" in details:
+                if_anomaly["duration_minutes"] = details.get("duration_minutes")
+            if "mlp_vector_magnitude" in details:
+                if_anomaly["mlp_vector_magnitude"] = details.get("mlp_vector_magnitude")
+            
+            if_anomalies.append(if_anomaly)
     
     # 센서 통계 (예시 데이터 - 실제로는 InfluxDB에서 집계)
     # TODO: InfluxDB에서 실제 센서 통계 수집
+    # 원본 노트북 형식에 맞춰 모든 센서 데이터 포함
     sensor_stats = {
         "temperature": {
             "mean": 38.2,
@@ -294,6 +358,29 @@ async def _collect_report_data(
             "y": {"mean": 1.18, "peak": 3.52, "rms": 1.39, "p95": 2.18},
             "z": {"mean": 0.95, "peak": 2.89, "rms": 1.12, "p95": 1.87},
             "trend_note": "X축 진동이 주 후반부 약 15% 증가"
+        },
+        # 원본 노트북에 있던 추가 센서 데이터
+        "accelerometer": {
+            "x": {"mean": 0.12, "peak": 2.45, "rms": 0.38, "std": 0.34},
+            "y": {"mean": -0.08, "peak": 2.21, "rms": 0.35, "std": 0.32},
+            "z": {"mean": 9.81, "peak": 11.23, "rms": 9.85, "std": 0.28}
+        },
+        "gyroscope": {
+            "x": {"mean": 0.03, "peak": 8.92, "rms": 1.24, "std": 1.22},
+            "y": {"mean": -0.01, "peak": 7.68, "rms": 1.18, "std": 1.17},
+            "z": {"mean": 0.02, "peak": 6.34, "rms": 0.95, "std": 0.94}
+        },
+        "sound": {
+            "mean": 68.3,
+            "max": 89.7,
+            "p95": 81.5,
+            "threshold_violations": len([a for a in alarms if a.get("sensor") == "sound"])
+        },
+        "pressure": {
+            "mean": 1013.2,
+            "min": 1008.5,
+            "max": 1018.7,
+            "trend_note": "주중 기압 완만 하강 (기상 영향)"
         }
     }
     
