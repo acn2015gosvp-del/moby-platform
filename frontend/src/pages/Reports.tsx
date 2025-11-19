@@ -8,8 +8,9 @@ export default function Reports() {
   const [reportContent, setReportContent] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [formData, setFormData] = useState<ReportRequest>({
-    period_start: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 16).replace('T', ' '),
-    period_end: new Date().toISOString().slice(0, 16).replace('T', ' '),
+    // datetime-local 입력은 YYYY-MM-DDTHH:MM 형식을 사용
+    period_start: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 16),
+    period_end: new Date().toISOString().slice(0, 16),
     equipment: 'Conveyor A-01',
     include_mlp_anomalies: true,
     include_if_anomalies: true,
@@ -22,11 +23,21 @@ export default function Reports() {
     setReportContent(null);
 
     try {
-      // 날짜 형식 변환 (YYYY-MM-DD HH:MM -> YYYY-MM-DD HH:MM:SS)
+      // 날짜 형식 변환 (YYYY-MM-DDTHH:MM -> YYYY-MM-DD HH:MM:SS)
+      // datetime-local 입력은 "2025-11-11T11:00" 형식으로 반환되므로 변환 필요
+      const formatDateTime = (dateTimeStr: string): string => {
+        // 이미 공백이 있으면 그대로 사용하고 :00 추가
+        if (dateTimeStr.includes(' ')) {
+          return dateTimeStr.includes(':00') ? dateTimeStr : dateTimeStr + ':00';
+        }
+        // T를 공백으로 바꾸고 :00 추가
+        return dateTimeStr.replace('T', ' ') + ':00';
+      };
+
       const request: ReportRequest = {
         ...formData,
-        period_start: formData.period_start + ':00',
-        period_end: formData.period_end + ':00',
+        period_start: formatDateTime(formData.period_start),
+        period_end: formatDateTime(formData.period_end),
       };
 
       const report = await reportService.generateReport(request);

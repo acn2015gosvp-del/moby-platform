@@ -9,7 +9,7 @@ import { router } from './router'
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <AuthProvider>
-      <WebSocketProvider>
+      <WebSocketProvider enabled={false}>
         <RouterProvider router={router} />
       </WebSocketProvider>
     </AuthProvider>

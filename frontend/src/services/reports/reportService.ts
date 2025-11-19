@@ -25,11 +25,15 @@ export interface ReportResponse {
 export const reportService = {
   /**
    * 보고서 생성
+   * LLM API 호출이 포함되어 있어 더 긴 타임아웃이 필요합니다.
    */
   async generateReport(request: ReportRequest): Promise<ReportResponse> {
     const response = await apiClient.post<SuccessResponse<ReportResponse>>(
       '/reports/generate',
-      request
+      request,
+      {
+        timeout: 120000, // 120초 (보고서 생성은 LLM API 호출로 인해 시간이 오래 걸릴 수 있음)
+      }
     );
     return response.data.data;
   },
