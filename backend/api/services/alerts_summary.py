@@ -76,17 +76,20 @@ def generate_alert_summary(alert_data: Dict) -> Optional[str]:
         
     except Exception as e:
         alert_id = alert_data.get("id", "unknown") if alert_data else "unknown"
-        error = LLMSummaryError(
-            message=f"LLM 요약 생성 중 예외 발생: {e}",
-            alert_id=alert_id,
-            original_error=e
+        # Gemini API 키가 없거나 오류가 발생한 경우 None을 반환 (선택사항 기능)
+        error_msg = str(e)
+        if "GEMINI_API_KEY" in error_msg or "API 키" in error_msg or "Gemini" in error_msg:
+            logger.debug(
+                f"generate_alert_summary: Gemini API 키가 없거나 모델을 사용할 수 없습니다. "
+                f"LLM 요약을 건너뜁니다. (alert_id={alert_id})"
+            )
+            return None
+        logger.warning(
+            f"generate_alert_summary: LLM 요약 생성 중 오류 발생: {e}. "
+            f"LLM 요약을 건너뜁니다. (alert_id={alert_id})"
         )
-        logger.error(
-            f"generate_alert_summary: {error.message} (alert_id={alert_id})",
-            exc_info=True
-        )
-        # 예외를 다시 발생시켜 상위에서 처리할 수 있도록 함
-        raise error
+        # 예외를 다시 발생시키지 않고 None을 반환 (선택사항 기능)
+        return None
 
 
 async def generate_alert_summary_async(alert_data: Dict) -> Optional[str]:
@@ -131,16 +134,20 @@ async def generate_alert_summary_async(alert_data: Dict) -> Optional[str]:
         
     except Exception as e:
         alert_id = alert_data.get("id", "unknown") if alert_data else "unknown"
-        error = LLMSummaryError(
-            message=f"LLM 요약 생성 중 예외 발생: {e}",
-            alert_id=alert_id,
-            original_error=e
+        # Gemini API 키가 없거나 오류가 발생한 경우 None을 반환 (선택사항 기능)
+        error_msg = str(e)
+        if "GEMINI_API_KEY" in error_msg or "API 키" in error_msg or "Gemini" in error_msg:
+            logger.debug(
+                f"generate_alert_summary_async: Gemini API 키가 없거나 모델을 사용할 수 없습니다. "
+                f"LLM 요약을 건너뜁니다. (alert_id={alert_id})"
+            )
+            return None
+        logger.warning(
+            f"generate_alert_summary_async: LLM 요약 생성 중 오류 발생: {e}. "
+            f"LLM 요약을 건너뜁니다. (alert_id={alert_id})"
         )
-        logger.error(
-            f"generate_alert_summary_async: {error.message} (alert_id={alert_id})",
-            exc_info=True
-        )
-        raise error
+        # 예외를 다시 발생시키지 않고 None을 반환 (선택사항 기능)
+        return None
 
 
 def generate_summary_batch(alert_list: list[Dict]) -> list[Optional[str]]:
