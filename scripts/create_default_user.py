@@ -18,7 +18,7 @@ from backend.api.models.user import User
 from backend.api.models.role import Role
 from backend.api.services.schemas.models.core.logger import setup_logging, get_logger
 from backend.api.services.schemas.models.core.config import settings
-import bcrypt
+from backend.api.services.auth_service import get_password_hash
 
 # 로깅 설정
 setup_logging(
@@ -51,9 +51,8 @@ def create_default_user():
             logger.info(f"   역할: {existing_user.role}")
             return existing_user
         
-        # 비밀번호 해싱 (직접 bcrypt 사용)
-        password_bytes = default_password.encode('utf-8')
-        hashed_password = bcrypt.hashpw(password_bytes, bcrypt.gensalt()).decode('utf-8')
+        # 비밀번호 해싱 (passlib 사용 - auth_service와 동일한 방식)
+        hashed_password = get_password_hash(default_password)
         
         # 사용자 생성
         new_user = User(
@@ -109,9 +108,8 @@ def create_test_user():
             logger.info(f"✅ 테스트 사용자가 이미 존재합니다: {existing_user.email}")
             return existing_user
         
-        # 비밀번호 해싱 (직접 bcrypt 사용)
-        password_bytes = test_password.encode('utf-8')
-        hashed_password = bcrypt.hashpw(password_bytes, bcrypt.gensalt()).decode('utf-8')
+        # 비밀번호 해싱 (passlib 사용 - auth_service와 동일한 방식)
+        hashed_password = get_password_hash(test_password)
         
         # 사용자 생성
         new_user = User(

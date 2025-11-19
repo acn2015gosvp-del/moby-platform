@@ -8,14 +8,11 @@ import logging
 from datetime import datetime, timedelta
 from typing import Optional
 from jose import JWTError, jwt
-from passlib.context import CryptContext
+import bcrypt
 
 from .schemas.models.core.config import settings
 
 logger = logging.getLogger(__name__)
-
-# 비밀번호 해싱 컨텍스트
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -29,7 +26,14 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     Returns:
         비밀번호가 일치하면 True, 아니면 False
     """
-    return pwd_context.verify(plain_password, hashed_password)
+    try:
+        # bcrypt를 직접 사용하여 검증
+        password_bytes = plain_password.encode('utf-8')
+        hashed_bytes = hashed_password.encode('utf-8')
+        return bcrypt.checkpw(password_bytes, hashed_bytes)
+    except Exception as e:
+        logger.warning(f"비밀번호 검증 중 오류: {e}")
+        return False
 
 
 def get_password_hash(password: str) -> str:
@@ -42,23 +46,15 @@ def get_password_hash(password: str) -> str:
     Returns:
         해시된 비밀번호
     """
-    # bcrypt는 최대 72바이트까지만 지원
-    # UTF-8 인코딩 시 바이트 길이 확인
+    # bcrypt를 직접 사용하여 해싱
     password_bytes = password.encode('utf-8')
+    # bcrypt는 최대 72바이트까지만 지원
     if len(password_bytes) > 72:
-        # 72바이트를 초과하면 자동으로 잘라냄
-        password = password_bytes[:72].decode('utf-8', errors='ignore')
+        password_bytes = password_bytes[:72]
     
-    try:
-        return pwd_context.hash(password)
-    except ValueError as e:
-        # bcrypt 버전 호환성 문제 해결
-        if "cannot be longer than 72 bytes" in str(e):
-            # 이미 72바이트로 제한했지만, 다시 확인
-            password_bytes = password.encode('utf-8')[:72]
-            password = password_bytes.decode('utf-8', errors='ignore')
-            return pwd_context.hash(password)
-        raise
+    salt = bcrypt.gensalt()
+    hashed = bcrypt.hashpw(password_bytes, salt)
+    return hashed.decode('utf-8')
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
