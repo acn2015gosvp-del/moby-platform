@@ -86,11 +86,12 @@ class Settings(BaseSettings):
     GRAFANA_URL: str = ""
     GRAFANA_API_KEY: str = ""
     
-    # OpenAI API 설정
+    # OpenAI API 설정 (사용 안 함 - Gemini API로 대체됨)
+    # 이 설정은 하위 호환성을 위해 유지되지만 실제로는 사용되지 않습니다.
     OPENAI_API_KEY: str = ""
     OPENAI_MODEL: str = "gpt-3.5-turbo"
     
-    # Gemini API 설정 (보고서 생성용)
+    # Gemini API 설정 (보고서 생성 및 알림 요약용)
     GEMINI_API_KEY: str = ""
     
     # 인증 설정
@@ -164,8 +165,10 @@ class Settings(BaseSettings):
                 warning_issues.append("MQTT_PORT (유효하지 않은 포트 번호)")
         
         # 공통 검증 (모든 환경)
+        # OpenAI는 선택사항이므로 경고만 표시 (필수 아님)
         if not self.OPENAI_API_KEY or self.OPENAI_API_KEY in ("your-api-key", "your-openai-api-key-here"):
-            warning_issues.append("OPENAI_API_KEY (LLM 기능 사용 불가)")
+            # OpenAI는 선택사항이므로 경고 목록에 추가하지 않음
+            pass
         
         # SECRET_KEY 기본값 경고 (개발 환경)
         if not self.is_production() and self.SECRET_KEY in (
