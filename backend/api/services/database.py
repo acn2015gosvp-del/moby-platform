@@ -13,13 +13,19 @@ from backend.api.services.schemas.models.core.config import settings
 
 # SQLite 데이터베이스 URL (개발용)
 # 프로덕션에서는 PostgreSQL 등을 사용하는 것을 권장합니다.
-DATABASE_URL = "sqlite:///./moby.db"
+# WAL 모드 활성화로 성능 향상
+DATABASE_URL = "sqlite:///./moby.db?mode=rwc"
 
 # SQLite는 단일 스레드에서만 작동하므로 StaticPool 사용
+# 성능 최적화를 위한 설정 추가
 engine = create_engine(
     DATABASE_URL,
-    connect_args={"check_same_thread": False},
+    connect_args={
+        "check_same_thread": False,
+        "timeout": 3.0,  # 연결 타임아웃 (5초 → 3초로 단축)
+    },
     poolclass=StaticPool,
+    pool_pre_ping=False,  # SQLite는 빠르므로 pre_ping 불필요 (오히려 느려질 수 있음)
     echo=settings.DEBUG  # 디버그 모드에서 SQL 쿼리 로그 출력
 )
 

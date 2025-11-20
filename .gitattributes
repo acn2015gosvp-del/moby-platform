@@ -1,0 +1,33 @@
+# .gitattributes - 파일 인코딩 및 줄바꿈 설정
+
+# .env 파일은 항상 UTF-8로 처리
+.env text eol=lf working-tree-encoding=UTF-8
+.env.* text eol=lf working-tree-encoding=UTF-8
+
+# 환경 변수 예시 파일도 UTF-8
+env.example text eol=lf working-tree-encoding=UTF-8
+
+# Python 파일
+*.py text eol=lf
+
+# TypeScript/JavaScript 파일
+*.ts text eol=lf
+*.tsx text eol=lf
+*.js text eol=lf
+*.jsx text eol=lf
+
+# 설정 파일
+*.json text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.toml text eol=lf
+
+# 문서 파일
+*.md text eol=lf
+*.txt text eol=lf
+
+# 기타 텍스트 파일
+*.sh text eol=lf
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+

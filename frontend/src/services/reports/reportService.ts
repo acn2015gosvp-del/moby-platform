@@ -32,7 +32,7 @@ export const reportService = {
       '/reports/generate',
       request,
       {
-        timeout: 120000, // 120초 (보고서 생성은 LLM API 호출로 인해 시간이 오래 걸릴 수 있음)
+        timeout: 180000, // 180초 (3분) - 데이터 수집 + LLM 생성 시간 고려
       }
     );
     return response.data.data;

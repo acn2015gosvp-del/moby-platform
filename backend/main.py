@@ -58,7 +58,18 @@ async def lifespan(app: FastAPI):
     logger.info("Initializing database and MQTT client...")
     set_app_start_time()  # 애플리케이션 시작 시간 설정
     init_db()  # ✅ 데이터베이스 테이블 생성
-    init_mqtt_client()  # ✅ MQTT 연결 시도 및 재시도 로직 호출
+    
+    # MQTT 초기화를 백그라운드 스레드로 처리 (블로킹 방지)
+    import threading
+    def init_mqtt_async():
+        try:
+            init_mqtt_client()  # ✅ MQTT 연결 시도 및 재시도 로직 호출
+        except Exception as e:
+            logger.warning(f"MQTT 초기화 중 오류 (비동기): {e}")
+    
+    mqtt_thread = threading.Thread(target=init_mqtt_async, daemon=True, name="MQTT-Init")
+    mqtt_thread.start()
+    logger.info("✅ MQTT 초기화를 백그라운드에서 시작했습니다.")
     
     # 2. 애플리케이션 실행 (Yield)
     yield

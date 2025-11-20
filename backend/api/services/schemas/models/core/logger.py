@@ -99,7 +99,8 @@ def setup_logging(
     logging.getLogger("fastapi").setLevel(third_party_level)
     logging.getLogger("paho").setLevel(third_party_level)
     logging.getLogger("influxdb_client").setLevel(third_party_level)
-    logging.getLogger("openai").setLevel(third_party_level)
+    # OpenAI는 더 이상 사용하지 않음 (Gemini API로 완전 대체)
+    # logging.getLogger("openai").setLevel(third_party_level)
     logging.getLogger("httpx").setLevel(third_party_level)
     logging.getLogger("httpcore").setLevel(third_party_level)
     

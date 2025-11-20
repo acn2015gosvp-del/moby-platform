@@ -151,8 +151,19 @@ export default function Reports() {
       )}
 
       {loading && (
-        <div className="flex justify-center items-center py-12">
-          <Loading />
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 mb-6">
+          <div className="flex items-center justify-center space-x-4">
+            <Loading />
+            <div className="text-left">
+              <p className="text-blue-800 font-medium">보고서 생성 중...</p>
+              <p className="text-blue-600 text-sm mt-1">
+                데이터 수집 및 LLM 보고서 생성 중... 예상 시간: 30-90초
+              </p>
+              <p className="text-blue-500 text-xs mt-1">
+                최적화된 설정으로 더 빠르게 생성됩니다. (타임아웃: 3분)
+              </p>
+            </div>
+          </div>
         </div>
       )}
 

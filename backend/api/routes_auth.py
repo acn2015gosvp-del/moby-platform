@@ -162,8 +162,17 @@ async def login(
         UnauthorizedError: 이메일 또는 비밀번호가 잘못된 경우
     """
     try:
-        # 사용자 조회
+        import time
+        total_start = time.time()
+        
+        # 사용자 조회 (인덱스 사용)
+        logger.debug(f"로그인 시도: {user_data.email}")
+        query_start = time.time()
         user = db.query(User).filter(User.email == user_data.email).first()
+        query_time = time.time() - query_start
+        
+        if query_time > 0.5:
+            logger.warning(f"⚠️ 사용자 조회가 느립니다: {query_time:.3f}초")
         
         if not user:
             logger.warning(f"로그인 실패: 존재하지 않는 이메일 - {user_data.email}")
@@ -172,11 +181,16 @@ async def login(
             )
         
         # 비밀번호 확인
+        pwd_start = time.time()
         if not verify_password(user_data.password, user.hashed_password):
-            logger.warning(f"로그인 실패: 비밀번호 불일치 - {user_data.email}")
+            pwd_time = time.time() - pwd_start
+            logger.warning(f"로그인 실패: 비밀번호 불일치 - {user_data.email} (검증 시간: {pwd_time:.3f}초)")
             raise UnauthorizedError(
                 message="이메일 또는 비밀번호가 잘못되었습니다."
             )
+        pwd_time = time.time() - pwd_start
+        if pwd_time > 0.3:
+            logger.warning(f"⚠️ 비밀번호 검증이 느립니다: {pwd_time:.3f}초")
         
         # 계정 활성화 확인
         if not user.is_active:
@@ -186,9 +200,19 @@ async def login(
             )
         
         # JWT 토큰 생성
+        token_start = time.time()
         access_token = create_access_token(data={"sub": user.email})
+        token_time = time.time() - token_start
         
-        logger.info(f"로그인 성공: {user.email} (ID: {user.id})")
+        total_time = time.time() - total_start
+        logger.info(
+            f"로그인 성공: {user.email} (ID: {user.id}) | "
+            f"총 시간: {total_time:.3f}초 (쿼리: {query_time:.3f}초, 비밀번호: {pwd_time:.3f}초, 토큰: {token_time:.3f}초)"
+        )
+        
+        # 성능 경고
+        if total_time > 1.0:
+            logger.warning(f"⚠️ 로그인 응답이 느립니다: {total_time:.3f}초")
         
         return SuccessResponse(
             success=True,
@@ -199,9 +223,36 @@ async def login(
     except UnauthorizedError:
         raise
     except Exception as e:
+        # 상세한 에러 정보 로깅
+        import traceback
+        error_traceback = traceback.format_exc()
         logger.exception(f"로그인 중 예상치 못한 오류: {e}")
+        logger.error(f"로그인 실패 상세 정보:\n{error_traceback}")
+        
+        # SECRET_KEY 관련 에러인지 확인
+        if "SECRET_KEY" in str(e) or "secret" in str(e).lower():
+            logger.error("SECRET_KEY가 설정되지 않았거나 잘못되었습니다.")
+            raise UnauthorizedError(
+                message="서버 설정 오류입니다. 관리자에게 문의하세요."
+            )
+        
+        # JWT 토큰 생성 관련 에러인지 확인
+        if "jwt" in str(e).lower() or "token" in str(e).lower():
+            logger.error("JWT 토큰 생성 중 오류가 발생했습니다.")
+            raise UnauthorizedError(
+                message="인증 토큰 생성 중 오류가 발생했습니다. 관리자에게 문의하세요."
+            )
+        
+        # 데이터베이스 관련 에러인지 확인
+        if "database" in str(e).lower() or "db" in str(e).lower() or "sql" in str(e).lower():
+            logger.error("데이터베이스 연결 오류가 발생했습니다.")
+            raise UnauthorizedError(
+                message="데이터베이스 연결 오류입니다. 관리자에게 문의하세요."
+            )
+        
+        # 기타 예상치 못한 에러는 500 에러로 변환하지 않고 401로 반환
         raise UnauthorizedError(
-            message="로그인 중 오류가 발생했습니다."
+            message="로그인 중 오류가 발생했습니다. 관리자에게 문의하세요."
         )
 
 

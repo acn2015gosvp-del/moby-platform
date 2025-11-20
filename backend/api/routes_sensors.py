@@ -5,7 +5,7 @@
 """
 
 from fastapi import APIRouter, status, Depends
-from typing import Dict, Any
+from typing import Dict, Any, List, Optional
 from datetime import datetime
 from pydantic import BaseModel, Field
 
@@ -14,7 +14,7 @@ from .core.responses import SuccessResponse, ErrorResponse
 from .core.api_exceptions import BadRequestError, InternalServerError
 from .services.schemas.models.core.logger import get_logger
 from backend.api.services.mqtt_client import mqtt_manager
-from backend.api.services.influx_client import query_sensor_status
+from backend.api.services.influx_client import query_sensor_status, influx_manager
 from backend.api.services.schemas.models.core.config import settings
 from backend.api.services.cache import get_cache, cache_key
 
@@ -29,12 +29,26 @@ class SensorDataResponse(BaseModel):
     timestamp: str = Field(..., description="수신 시각")
 
 
+class DeviceSummary(BaseModel):
+    """설비 요약 정보"""
+    device_id: str = Field(..., description="설비 ID")
+    name: str = Field(..., description="설비 이름")
+    category: Optional[str] = Field(None, description="설비 카테고리")
+    dashboardUID: str = Field(..., description="Grafana 대시보드 UID")
+    status: str = Field(..., description="상태 (정상, 경고, 긴급, 오프라인)")
+    sensorCount: Optional[int] = Field(None, description="센서 수")
+    alertCount: Optional[int] = Field(None, description="알림 수")
+    operationRate: Optional[float] = Field(None, description="가동률 (%)")
+    lastUpdated: Optional[str] = Field(None, description="마지막 업데이트 시간")
+
+
 class SensorStatusResponse(BaseModel):
     """센서 상태 응답 모델"""
     status: str = Field(..., description="전체 상태")
     count: int = Field(..., description="전체 센서 수")
     active: int = Field(..., description="활성 센서 수")
     inactive: int = Field(..., description="비활성 센서 수")
+    devices: List[DeviceSummary] = Field(default_factory=list, description="설비 목록")
 
 
 def get_current_timestamp() -> str:
@@ -242,6 +256,7 @@ async def get_sensor_status() -> SuccessResponse[SensorStatusResponse]:
         total_count = sensor_status["total_count"]
         active_count = sensor_status["active_count"]
         inactive_count = sensor_status["inactive_count"]
+        device_ids = sensor_status.get("devices", [])
         
         # 상태 결정
         if total_count == 0:
@@ -253,9 +268,172 @@ async def get_sensor_status() -> SuccessResponse[SensorStatusResponse]:
         else:
             status_str = "error"  # 활성 센서 없음
         
+        # 설비 목록 생성 (InfluxDB와 알림 DB에서 실제 데이터 조회)
+        devices: List[DeviceSummary] = []
+        
+        # 알림 데이터베이스에서 각 device별 알림 수 조회
+        from backend.api.services.alert_storage import get_latest_alerts
+        from backend.api.services.database import SessionLocal
+        
+        db = SessionLocal()
+        try:
+            # 각 device별 알림 수 계산
+            device_alert_counts: Dict[str, int] = {}
+            device_alert_counts_warning: Dict[str, int] = {}
+            device_alert_counts_critical: Dict[str, int] = {}
+            
+            # 최근 24시간 알림 조회
+            all_alerts = get_latest_alerts(db=db, limit=1000, sensor_id=None, level=None)
+            for alert in all_alerts:
+                sensor_id = alert.sensor_id
+                # device_id 추출 (sensor_id가 device_id를 포함하는 경우)
+                device_id = sensor_id.split('_')[0] if '_' in sensor_id else sensor_id
+                
+                if device_id in device_ids:
+                    device_alert_counts[device_id] = device_alert_counts.get(device_id, 0) + 1
+                    if alert.level == "warning":
+                        device_alert_counts_warning[device_id] = device_alert_counts_warning.get(device_id, 0) + 1
+                    elif alert.level == "critical":
+                        device_alert_counts_critical[device_id] = device_alert_counts_critical.get(device_id, 0) + 1
+        finally:
+            db.close()
+        
+        # InfluxDB에서 각 device별 상세 정보 조회
+        from datetime import timedelta
+        
+        for device_id in device_ids:
+            try:
+                # InfluxDB에서 device별 센서 필드 수 계산 (최근 1시간)
+                sensor_count = 0
+                last_updated = None
+                operation_rate = None
+                
+                try:
+                    # 최근 1시간 내 데이터 조회하여 센서 필드 수 계산
+                    query = f'''
+                    from(bucket: "{settings.INFLUX_BUCKET}")
+                      |> range(start: -1h)
+                      |> filter(fn: (r) => r["_measurement"] == "sensor_data")
+                      |> filter(fn: (r) => r["device_id"] == "{device_id}")
+                      |> group(columns: ["_field"])
+                      |> distinct(column: "_field")
+                    '''
+                    
+                    result = influx_manager.query_api.query(query=query, org=settings.INFLUX_ORG)
+                    sensor_fields = set()
+                    for table in result:
+                        for record in table.records:
+                            # _field 컬럼에서 필드 이름 가져오기
+                            field_name = record.values.get("_field")
+                            if field_name:
+                                sensor_fields.add(field_name)
+                    sensor_count = len(sensor_fields) if sensor_fields else 0
+                    
+                    # 최근 데이터 타임스탬프 조회
+                    query_last = f'''
+                    from(bucket: "{settings.INFLUX_BUCKET}")
+                      |> range(start: -24h)
+                      |> filter(fn: (r) => r["_measurement"] == "sensor_data")
+                      |> filter(fn: (r) => r["device_id"] == "{device_id}")
+                      |> last()
+                    '''
+                    
+                    result_last = influx_manager.query_api.query(query=query_last, org=settings.INFLUX_ORG)
+                    for table in result_last:
+                        for record in table.records:
+                            if record.get_time():
+                                last_updated = record.get_time().isoformat()
+                                break
+                    
+                    # 가동률 계산 (최근 24시간 중 데이터가 있는 시간 비율)
+                    query_operation = f'''
+                    from(bucket: "{settings.INFLUX_BUCKET}")
+                      |> range(start: -24h)
+                      |> filter(fn: (r) => r["_measurement"] == "sensor_data")
+                      |> filter(fn: (r) => r["device_id"] == "{device_id}")
+                      |> aggregateWindow(every: 1h, fn: count, createEmpty: false)
+                      |> count()
+                    '''
+                    
+                    result_op = influx_manager.query_api.query(query=query_operation, org=settings.INFLUX_ORG)
+                    hours_with_data = 0
+                    for table in result_op:
+                        for record in table.records:
+                            hours_with_data = record.get_value() or 0
+                            break
+                    
+                    if hours_with_data > 0:
+                        operation_rate = round((hours_with_data / 24) * 100, 1)
+                    
+                except Exception as e:
+                    logger.warning(f"Failed to query device details for {device_id}: {e}")
+                
+                # 상태 결정 (알림 수 기반)
+                alert_count = device_alert_counts.get(device_id, 0)
+                warning_count = device_alert_counts_warning.get(device_id, 0)
+                critical_count = device_alert_counts_critical.get(device_id, 0)
+                
+                if critical_count > 0:
+                    device_status = "긴급"
+                elif warning_count > 0:
+                    device_status = "경고"
+                elif device_id in device_ids:
+                    device_status = "정상"
+                else:
+                    device_status = "오프라인"
+                
+                # 설비 이름 및 카테고리 매핑 (향후 데이터베이스에서 조회)
+                device_name_mapping = {
+                    "sensor": "센서 시스템",
+                    "device": "디바이스",
+                    "equipment": "설비",
+                }
+                
+                # device_id에서 이름 추출
+                device_name = device_id.replace('_', ' ').title()
+                if any(keyword in device_id.lower() for keyword in ['conveyor', 'belt']):
+                    device_name = f"컨베이어 벨트 {device_id.split('_')[-1] if '_' in device_id else ''}"
+                    device_category = "운송 시스템"
+                elif any(keyword in device_id.lower() for keyword in ['cnc', 'machine']):
+                    device_name = f"CNC 머신 {device_id.split('_')[-1] if '_' in device_id else ''}"
+                    device_category = "가공 장비"
+                elif any(keyword in device_id.lower() for keyword in ['robot', 'arm']):
+                    device_name = f"로봇 팔 {device_id.split('_')[-1] if '_' in device_id else ''}"
+                    device_category = "자동화 설비"
+                else:
+                    device_category = "산업 설비"
+                
+                devices.append(DeviceSummary(
+                    device_id=device_id,
+                    name=device_name,
+                    category=device_category,
+                    dashboardUID=device_id,  # 기본값: device_id를 dashboardUID로 사용
+                    status=device_status,
+                    sensorCount=sensor_count if sensor_count > 0 else None,
+                    alertCount=alert_count if alert_count > 0 else 0,
+                    operationRate=operation_rate,
+                    lastUpdated=last_updated,
+                ))
+                
+            except Exception as e:
+                logger.warning(f"Failed to process device {device_id}: {e}")
+                # 기본 정보라도 추가
+                devices.append(DeviceSummary(
+                    device_id=device_id,
+                    name=f"설비 {device_id}",
+                    category="산업 설비",
+                    dashboardUID=device_id,
+                    status="정상",
+                    sensorCount=None,
+                    alertCount=device_alert_counts.get(device_id, 0),
+                    operationRate=None,
+                    lastUpdated=None,
+                ))
+        
         logger.info(
             f"Sensor status retrieved from InfluxDB. "
-            f"Total: {total_count}, Active: {active_count}, Inactive: {inactive_count}"
+            f"Total: {total_count}, Active: {active_count}, Inactive: {inactive_count}, "
+            f"Devices: {len(devices)}"
         )
         
         response = SuccessResponse(
@@ -264,7 +442,8 @@ async def get_sensor_status() -> SuccessResponse[SensorStatusResponse]:
                 status=status_str,
                 count=total_count,
                 active=active_count,
-                inactive=inactive_count
+                inactive=inactive_count,
+                devices=devices
             ),
             message="Sensor status retrieved successfully"
         )

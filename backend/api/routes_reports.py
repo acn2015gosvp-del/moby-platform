@@ -125,7 +125,11 @@ async def generate_report(
             )
         
         # 보고서 데이터 수집
+        import time
+        total_start_time = time.time()
+        
         logger.info(f"보고서 데이터 수집 시작. 기간: {request.period_start} ~ {request.period_end}")
+        data_collection_start = time.time()
         
         report_data = await _collect_report_data(
             db=db,
@@ -137,14 +141,25 @@ async def generate_report(
             include_if_anomalies=request.include_if_anomalies
         )
         
+        data_collection_time = time.time() - data_collection_start
+        logger.info(f"✅ 데이터 수집 완료 (소요 시간: {data_collection_time:.2f}초)")
+        
         # 보고서 생성
         try:
             # 보고서 생성기 인스턴스 리셋 (모델 변경 시 필요)
             from backend.api.services.report_generator import reset_report_generator
             reset_report_generator()
             
+            llm_start_time = time.time()
+            logger.info("LLM 보고서 생성 시작...")
+            
             generator = get_report_generator()
             report_content = generator.generate_report(report_data)
+            
+            llm_time = time.time() - llm_start_time
+            total_time = time.time() - total_start_time
+            logger.info(f"✅ LLM 생성 완료 (소요 시간: {llm_time:.2f}초)")
+            logger.info(f"📊 전체 보고서 생성 완료 (총 소요 시간: {total_time:.2f}초, 데이터 수집: {data_collection_time:.2f}초, LLM 생성: {llm_time:.2f}초)")
         except ImportError as e:
             logger.error(f"보고서 생성기 초기화 실패: {e}")
             raise HTTPException(
@@ -223,11 +238,12 @@ async def _collect_report_data(
         "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     }
     
-    # 알람 데이터 수집
-    # 기간 필터링을 위해 모든 알람을 가져온 후 필터링
+    # 알람 데이터 수집 (성능 최적화: 제한된 수만 가져오기)
+    # 기간 필터링을 위해 알람을 가져온 후 필터링
+    # limit을 500으로 줄여서 데이터 수집 시간 단축
     all_alerts = get_latest_alerts(
         db=db,
-        limit=1000,
+        limit=500,  # 1000 → 500으로 감소 (성능 개선)
         sensor_id=None if not sensor_ids else sensor_ids[0] if len(sensor_ids) == 1 else None,
         level=None
     )

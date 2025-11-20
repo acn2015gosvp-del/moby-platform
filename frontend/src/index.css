@@ -6,6 +6,15 @@
   font-weight: 400;
 }
 
+/* CSS 호환성 개선: 웹킷 및 표준 속성 모두 사용 */
+@layer base {
+  html,
+  :host {
+    -webkit-text-size-adjust: 100%; /* Safari, 구형 Chrome */
+    text-size-adjust: 100%; /* 표준 (Chrome 54+, Edge 79+) */
+  }
+}
+
 body {
   margin: 0;
   min-width: 320px;

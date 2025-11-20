@@ -29,7 +29,10 @@ export const register = async (data: RegisterRequest): Promise<User> => {
 export const login = async (data: LoginRequest): Promise<Token> => {
   const response = await apiClient.post<SuccessResponse<Token>>(
     AUTH_ENDPOINTS.LOGIN,
-    data
+    data,
+    {
+      timeout: 60000, // 60초 타임아웃 (로그인 지연 문제 해결)
+    }
   )
   return response.data.data
 }

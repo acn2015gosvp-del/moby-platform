@@ -14,6 +14,8 @@ const Dashboard = lazy(() => import('./pages/Dashboard'))
 const Alerts = lazy(() => import('./pages/Alerts'))
 const Sensors = lazy(() => import('./pages/Sensors'))
 const Reports = lazy(() => import('./pages/Reports'))
+const EquipmentList = lazy(() => import('./pages/EquipmentList'))
+const Monitoring = lazy(() => import('./pages/Monitoring'))
 const Login = lazy(() => import('./pages/Login'))
 const Register = lazy(() => import('./pages/Register'))
 
@@ -78,6 +80,22 @@ export const router = createBrowserRouter([
         element: (
           <LazyWrapper>
             <Reports />
+          </LazyWrapper>
+        ),
+      },
+      {
+        path: 'equipment',
+        element: (
+          <LazyWrapper>
+            <EquipmentList />
+          </LazyWrapper>
+        ),
+      },
+      {
+        path: 'monitoring/:deviceId?',
+        element: (
+          <LazyWrapper>
+            <Monitoring />
           </LazyWrapper>
         ),
       },

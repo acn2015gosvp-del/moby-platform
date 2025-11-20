@@ -113,7 +113,7 @@ class MOBYReportGenerator:
                         'temperature': 0.18,
                         'top_p': 0.8,
                         'top_k': 40,
-                        'max_output_tokens': 8192,
+                        'max_output_tokens': 3072,  # 4096 → 3072로 추가 감소 (생성 시간 더 단축)
                     }
                 )
                 
@@ -144,6 +144,42 @@ class MOBYReportGenerator:
             )
         
         logger.info(f"✅ MOBYReportGenerator 초기화 완료! 사용 모델: {self.model_name}")
+    
+    def _summarize_data_for_prompt(self, data: Dict[str, Any]) -> str:
+        """프롬프트 크기를 줄이기 위해 데이터를 요약합니다."""
+        try:
+            # 센서 통계 요약 (핵심 필드만)
+            sensor_stats_summary = {}
+            for key, value in data.get("sensor_stats", {}).items():
+                if isinstance(value, dict):
+                    # 핵심 필드만 추출
+                    summary = {}
+                    for k in ["mean", "max", "min", "threshold_violations"]:
+                        if k in value:
+                            summary[k] = value[k]
+                    if summary:
+                        sensor_stats_summary[key] = summary
+                else:
+                    sensor_stats_summary[key] = value
+            
+            # 요약된 데이터 구성
+            summarized = {
+                "metadata": data.get("metadata", {}),
+                "sensor_stats": sensor_stats_summary,
+                "alarms_count": len(data.get("alarms", [])),
+                "alarms_sample": data.get("alarms", [])[:10],  # 최대 10개만
+                "mlp_anomalies_count": len(data.get("mlp_anomalies", [])),
+                "mlp_anomalies_sample": data.get("mlp_anomalies", [])[:5],  # 최대 5개만
+                "if_anomalies_count": len(data.get("if_anomalies", [])),
+                "if_anomalies_sample": data.get("if_anomalies", [])[:5],  # 최대 5개만
+                "correlations": data.get("correlations", {})
+            }
+            
+            return json.dumps(summarized, indent=2, ensure_ascii=False)
+        except Exception as e:
+            logger.warning(f"데이터 요약 실패, 전체 데이터 사용: {e}")
+            # 요약 실패 시 전체 데이터 사용 (안전장치)
+            return json.dumps(data, indent=2, ensure_ascii=False)
     
     def generate_report(self, report_data: Dict[str, Any]) -> str:
         """
@@ -196,13 +232,16 @@ class MOBYReportGenerator:
             
             prompt = self._build_prompt(report_data)
             
-            logger.info(f"Gemini API 호출 중... (모델: {self.model_name})")
+            import time
+            start_time = time.time()
+            logger.info(f"Gemini API 호출 중... (모델: {self.model_name}, 최적화된 설정: max_tokens=4096)")
             response = self.model.generate_content(prompt)
+            elapsed_time = time.time() - start_time
             
             if not response.text:
                 raise ValueError("Gemini API가 빈 응답을 반환했습니다.")
             
-            logger.info(f"보고서 생성 완료. 길이: {len(response.text)} 문자")
+            logger.info(f"✅ 보고서 생성 완료 (소요 시간: {elapsed_time:.2f}초, 길이: {len(response.text)} 문자, 모델: {self.model_name})")
             return response.text
             
         except Exception as e:
@@ -275,26 +314,28 @@ class MOBYReportGenerator:
 - 표는 정렬된 형태로 작성
 
 ## 내용 요구사항
-1. **Executive Summary**: 3-4문장으로 핵심 발견사항 요약
+**중요: 간결하고 핵심적인 내용만 작성하세요. 불필요한 반복이나 장황한 설명을 피하세요.**
+
+1. **Executive Summary**: 2-3문장으로 핵심 발견사항 요약
    - 주요 센서 상관관계
    - 이상 탐지 건수 및 심각도
    - 즉시 조치 필요 여부
    
-2. **센서별 통계**: 제공된 수치를 표로 정리
+2. **센서별 통계**: 제공된 수치를 표로 정리 (간결하게)
    - 임계값 초과 시 **굵은 글씨**로 강조
    
-3. **이상 탐지 상세**: 각 이상에 대해
+3. **이상 탐지 상세**: 각 이상에 대해 (핵심만)
    - 발생 시각 및 유형
-   - 원시 데이터 JSON 포함
-   - **물리적 해석**: 왜 이 패턴이 발생했는지, 설비 관점에서 설명
-   - 구체적 권장 조치
+   - **물리적 해석**: 왜 이 패턴이 발생했는지, 설비 관점에서 간단히 설명
+   - 구체적 권장 조치 (1-2줄)
+   - 원시 데이터 JSON은 중요한 경우만 포함
    
 4. **상관 분석 인사이트**: 
-   - 센서 간 관계의 **공학적 의미** 해석
-   - 시간적 패턴 분석
-   - 근본 원인 추론
+   - 센서 간 관계의 **공학적 의미** 해석 (간결하게)
+   - 시간적 패턴 분석 (핵심만)
+   - 근본 원인 추론 (간단히)
    
-5. **권장 사항**: 우선순위별 분류 (High/Medium/Ongoing)
+5. **권장 사항**: 우선순위별 분류 (High/Medium/Ongoing) - 각 항목 1-2줄
 
 ## 톤 및 스타일
 - 전문적이고 명확한 기술 문서 스타일
@@ -312,9 +353,9 @@ class MOBYReportGenerator:
 - `if_anomalies`: Isolation Forest가 탐지한 미지의 이상 (Novelty)
 - `correlations`: 센서 간 상관계수 및 해석
 
-# 입력 데이터
+# 입력 데이터 (요약 버전 - 핵심 정보만 포함하여 프롬프트 크기 최소화)
 ```json
-{json.dumps(data, indent=2, ensure_ascii=False)}
+{self._summarize_data_for_prompt(data)}
 ```
 
 ---

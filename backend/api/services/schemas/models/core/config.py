@@ -20,9 +20,233 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
+def _normalize_env_file_encoding_once(env_file_path: Path) -> bool:
+    """
+    .env 파일을 UTF-8 (BOM 없음)로 정규화합니다 (한 번만 실행).
+    정규화 플래그 파일을 확인하여 이미 정규화된 경우 건너뜁니다.
+    
+    Args:
+        env_file_path: .env 파일 경로
+        
+    Returns:
+        정규화가 필요한 경우 True, 이미 UTF-8인 경우 False
+    """
+    # 정규화 플래그 파일 경로
+    flag_file = env_file_path.with_suffix('.env.normalized')
+    
+    # 이미 정규화된 경우 건너뛰기
+    if flag_file.exists():
+        # 플래그 파일이 있고, .env 파일이 최신이면 정규화 건너뛰기
+        flag_mtime = flag_file.stat().st_mtime
+        env_mtime = env_file_path.stat().st_mtime
+        if flag_mtime >= env_mtime:
+            logger.debug(f".env 파일이 이미 정규화되었습니다. (플래그: {flag_file.name})")
+            return False
+    
+    # 정규화 실행
+    result = _normalize_env_file_encoding(env_file_path)
+    
+    # 정규화 성공 시 플래그 파일 생성
+    if result:
+        try:
+            flag_file.touch()
+            logger.debug(f"정규화 플래그 파일 생성: {flag_file.name}")
+        except Exception as e:
+            logger.warning(f"정규화 플래그 파일 생성 실패: {e}")
+    
+    return result
+
+
+def _normalize_env_file_encoding(env_file_path: Path) -> bool:
+    """
+    .env 파일을 UTF-8 (BOM 없음)로 정규화합니다.
+    중요한 환경 변수(API 키 등)가 손상되지 않도록 검증합니다.
+    
+    Args:
+        env_file_path: .env 파일 경로
+        
+    Returns:
+        정규화가 필요한 경우 True, 이미 UTF-8인 경우 False
+    """
+    if not env_file_path.exists():
+        return False
+    
+    try:
+        # 여러 인코딩으로 읽기 시도
+        content = None
+        used_encoding = None
+        
+        for encoding in ['utf-8-sig', 'utf-8', 'latin-1', 'cp949', 'euc-kr']:
+            try:
+                with open(env_file_path, 'r', encoding=encoding) as f:
+                    content = f.read()
+                used_encoding = encoding
+                break
+            except (UnicodeDecodeError, UnicodeError):
+                continue
+        
+        if content is None:
+            logger.warning(f"Could not decode .env file with any encoding: {env_file_path}")
+            return False
+        
+        # 중요한 환경 변수 추출 (검증용)
+        # API 키와 토큰은 인코딩 변환 시 손상되면 안 되므로 사전에 추출
+        sensitive_keys = ['GEMINI_API_KEY', 'INFLUX_TOKEN', 'GRAFANA_API_KEY', 'SECRET_KEY']
+        original_values = {}
+        for line in content.split('\n'):
+            line = line.strip()
+            if line and not line.startswith('#') and '=' in line:
+                # 주석 제거 (값에 #이 있을 수 있으므로 주의)
+                if ' #' in line:
+                    line = line[:line.index(' #')]
+                key = line.split('=', 1)[0].strip()
+                if key in sensitive_keys:
+                    value = line.split('=', 1)[1].strip().strip('"').strip("'")
+                    original_values[key] = value
+                    logger.debug(f"Extracted {key} for verification (length: {len(value)})")
+        
+        # UTF-8 (BOM 없음)로 다시 저장
+        needs_conversion = used_encoding not in ['utf-8', 'utf-8-sig']
+        has_bom = content.startswith('\ufeff')
+        
+        if needs_conversion or has_bom:
+            # 변환 전 백업 생성 (중요 값 손상 방지)
+            import shutil
+            from datetime import datetime
+            
+            backup_path = env_file_path.with_suffix(f'.env.backup.{datetime.now().strftime("%Y%m%d_%H%M%S")}')
+            try:
+                shutil.copy2(env_file_path, backup_path)
+                logger.info(f"📦 백업 생성: {backup_path.name}")
+            except Exception as e:
+                logger.error(f"❌ 백업 생성 실패: {e}")
+                return False  # 백업 실패 시 변환 중단
+            
+            # BOM 제거
+            if has_bom:
+                content = content[1:]
+            
+            # UTF-8로 저장
+            try:
+                with open(env_file_path, 'w', encoding='utf-8', newline='\n') as f:
+                    f.write(content)
+                logger.debug(f"임시로 UTF-8로 저장 완료")
+            except Exception as e:
+                logger.error(f"❌ 파일 저장 실패: {e}")
+                # 저장 실패 시 백업에서 복원
+                try:
+                    shutil.copy2(backup_path, env_file_path)
+                    logger.warning(f"백업에서 복원: {backup_path.name}")
+                except Exception as restore_error:
+                    logger.error(f"복원 실패: {restore_error}")
+                return False
+            
+            # 변환 후 검증: 중요한 값이 손상되지 않았는지 확인
+            verification_passed = True
+            corrupted_keys = []
+            
+            # 변환된 파일 다시 읽기
+            try:
+                with open(env_file_path, 'r', encoding='utf-8') as f:
+                    converted_content = f.read()
+            except Exception as e:
+                logger.error(f"변환된 파일 읽기 실패: {e}")
+                verification_passed = False
+                converted_content = content
+            
+            for key, original_value in original_values.items():
+                # 변환 후 값 추출
+                new_value = None
+                for line in converted_content.split('\n'):
+                    line_stripped = line.strip()
+                    if line_stripped.startswith(f"{key}="):
+                        # 주석 제거
+                        if ' #' in line_stripped:
+                            line_stripped = line_stripped[:line_stripped.index(' #')]
+                        new_value = line_stripped.split('=', 1)[1].strip().strip('"').strip("'")
+                        break
+                
+                if new_value is None:
+                    logger.warning(f"⚠️ {key}를 변환된 파일에서 찾을 수 없습니다")
+                    corrupted_keys.append(key)
+                    verification_passed = False
+                elif new_value != original_value:
+                    logger.error(
+                        f"❌ {key} 값이 변환 중 손상되었습니다!\n"
+                        f"   원본 길이: {len(original_value)}자\n"
+                        f"   변환 후 길이: {len(new_value)}자\n"
+                        f"   원본 앞 10자: {original_value[:10]}...\n"
+                        f"   변환 후 앞 10자: {new_value[:10]}..."
+                    )
+                    corrupted_keys.append(key)
+                    verification_passed = False
+                else:
+                    logger.debug(f"✅ {key} 검증 통과 (길이: {len(original_value)}자)")
+            
+            if not verification_passed:
+                # 손상된 키가 있으면 백업에서 복원
+                logger.error(
+                    f"❌ 인코딩 변환 중 중요 값이 손상되었습니다!\n"
+                    f"   손상된 키: {', '.join(corrupted_keys)}\n"
+                    f"   백업에서 자동 복원합니다..."
+                )
+                try:
+                    shutil.copy2(backup_path, env_file_path)
+                    logger.warning(f"✅ 백업에서 복원 완료: {backup_path.name}")
+                    logger.warning(f"   원본 인코딩({used_encoding})을 유지합니다.")
+                    # 백업 파일은 유지 (수동 확인용)
+                    return False
+                except Exception as e:
+                    logger.error(f"❌ 백업 복원 실패: {e}")
+                    logger.error(f"   수동으로 {backup_path.name}을 .env로 복사하세요!")
+                    return False
+            
+            # 검증 통과 시
+            if needs_conversion:
+                logger.info(f"✅ .env 파일 인코딩 변환 완료: {used_encoding} → UTF-8")
+            if has_bom:
+                logger.info(f"✅ BOM 제거 완료")
+            
+            # 모든 중요 값 검증 통과
+            logger.info(f"✅ 모든 중요 환경 변수 검증 통과 ({len(original_values)}개)")
+            
+            # 정규화 플래그 파일 생성 (성공 시)
+            try:
+                flag_file = env_file_path.with_suffix('.env.normalized')
+                flag_file.touch()
+                logger.debug(f"정규화 플래그 파일 생성: {flag_file.name}")
+            except Exception as e:
+                logger.warning(f"정규화 플래그 파일 생성 실패: {e}")
+            
+            # 백업 파일 정리 (성공 시, 최신 백업만 유지)
+            try:
+                # 같은 이름 패턴의 오래된 백업 파일 삭제
+                backup_dir = backup_path.parent
+                backup_pattern = env_file_path.stem + '.env.backup.*'
+                import glob
+                old_backups = sorted(glob.glob(str(backup_dir / backup_pattern)), reverse=True)
+                # 최신 3개만 유지하고 나머지 삭제
+                for old_backup in old_backups[3:]:
+                    try:
+                        Path(old_backup).unlink()
+                        logger.debug(f"오래된 백업 삭제: {Path(old_backup).name}")
+                    except Exception:
+                        pass
+            except Exception:
+                pass  # 백업 정리 실패해도 계속 진행
+            
+            return True
+        
+        return False
+        
+    except Exception as e:
+        logger.warning(f"Failed to normalize .env file encoding: {e}")
+        return False
+
+
 def _get_env_file() -> Optional[str]:
     """
-    환경에 따라 .env 파일 경로를 결정합니다.
+    환경에 따라 .env 파일 경로를 결정하고 인코딩을 정규화합니다.
     
     우선순위:
     1. .env.{ENVIRONMENT} (예: .env.dev, .env.prod)
@@ -45,12 +269,14 @@ def _get_env_file() -> Optional[str]:
     # .env.{environment} 파일 확인
     env_file = project_root / f".env.{env}"
     if env_file.exists():
+        _normalize_env_file_encoding_once(env_file)
         logger.info(f"Loading environment file: .env.{env}")
         return str(env_file)
     
     # .env 파일 확인
     env_file = project_root / ".env"
     if env_file.exists():
+        _normalize_env_file_encoding_once(env_file)
         logger.info("Loading environment file: .env")
         return str(env_file)
     
@@ -87,9 +313,9 @@ class Settings(BaseSettings):
     GRAFANA_API_KEY: str = ""
     
     # OpenAI API 설정 (사용 안 함 - Gemini API로 대체됨)
-    # 이 설정은 하위 호환성을 위해 유지되지만 실제로는 사용되지 않습니다.
-    OPENAI_API_KEY: str = ""
-    OPENAI_MODEL: str = "gpt-3.5-turbo"
+    # 알람 및 보고서 생성은 모두 Gemini API를 사용합니다.
+    # OPENAI_API_KEY: str = ""
+    # OPENAI_MODEL: str = "gpt-3.5-turbo"
     
     # Gemini API 설정 (보고서 생성 및 알림 요약용)
     GEMINI_API_KEY: str = ""
@@ -165,10 +391,8 @@ class Settings(BaseSettings):
                 warning_issues.append("MQTT_PORT (유효하지 않은 포트 번호)")
         
         # 공통 검증 (모든 환경)
-        # OpenAI는 선택사항이므로 경고만 표시 (필수 아님)
-        if not self.OPENAI_API_KEY or self.OPENAI_API_KEY in ("your-api-key", "your-openai-api-key-here"):
-            # OpenAI는 선택사항이므로 경고 목록에 추가하지 않음
-            pass
+        # OpenAI는 더 이상 사용하지 않음 (Gemini API로 완전 대체)
+        # 알람 및 보고서 생성은 모두 Gemini API를 사용합니다.
         
         # SECRET_KEY 기본값 경고 (개발 환경)
         if not self.is_production() and self.SECRET_KEY in (

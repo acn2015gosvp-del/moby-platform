@@ -14,7 +14,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api'
  */
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 10000,
+  timeout: 60000, // 60초로 증가 (로그인 지연 문제 해결)
   headers: {
     'Content-Type': 'application/json',
   },
@@ -93,6 +93,13 @@ apiClient.interceptors.response.use(
     } else if (error.request) {
       // 요청은 보냈지만 응답을 받지 못한 경우
       console.error('Network Error:', error.request)
+      
+      // 타임아웃 오류 처리
+      if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
+        console.error('Request timeout - 서버 응답이 너무 느립니다.')
+      } else if (error.code === 'ERR_NETWORK' || error.message.includes('Network Error')) {
+        console.error('Network connection failed - 백엔드 서버가 실행 중인지 확인하세요.')
+      }
     } else {
       // 요청 설정 중 에러 발생
       console.error('Error:', error.message)

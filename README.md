@@ -48,8 +48,11 @@ moby-platform/
 ├── docs/                # 프로젝트 문서
 │   ├── API_DOCUMENTATION.md
 │   ├── BACKEND_WORK_STATUS.md
+│   ├── ENV_FILE_ENCODING.md  # .env 파일 인코딩 가이드
 │   └── FRONTEND_TEMPLATE_REQUIREMENTS.md
 └── scripts/             # 유틸리티 스크립트
+    ├── edit_env.py      # .env 파일 안전 편집 도구
+    └── setup_powershell_utf8.ps1  # PowerShell UTF-8 설정
 ```
 
 ## 🚀 시작하기

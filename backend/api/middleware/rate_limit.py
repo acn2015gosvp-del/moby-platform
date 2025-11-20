@@ -149,8 +149,12 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self.rate_limiter = get_rate_limiter()
 
     async def dispatch(self, request: Request, call_next):
-        # Health check 엔드포인트는 제외
-        if request.url.path.startswith("/health") or request.url.path.startswith("/metrics"):
+        # Health check 및 인증 엔드포인트는 제외 (성능 최적화)
+        path = request.url.path
+        if (path.startswith("/health") or 
+            path.startswith("/metrics") or 
+            path.startswith("/auth/login") or 
+            path.startswith("/auth/register")):
             return await call_next(request)
 
         # IP 주소 추출

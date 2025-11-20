@@ -143,14 +143,24 @@ class MqttClientManager:
             )
             self.is_connecting = False
             
-    def _on_disconnect(self, client, userdata, rc, properties=None):
-        """연결 끊김 콜백"""
+    def _on_disconnect(self, client, userdata, rc, *args, **kwargs):
+        """
+        연결 끊김 콜백
+        
+        paho-mqtt v2.0+ 호환성을 위해 *args, **kwargs 사용
+        인자: (client, userdata, rc, reason_code=None, properties=None)
+        """
+        # rc가 0이면 정상 종료
         if rc == 0:
             logger.info("ℹ️ MQTT disconnected normally.")
         else:
+            # reason_code 추출 (kwargs 또는 args에서)
+            reason_code = kwargs.get('reason_code') or (args[0] if args else None)
+            reason_str = f", reason_code: {reason_code}" if reason_code else ""
+            
             logger.warning(
                 f"⚠️ MQTT disconnected unexpectedly. "
-                f"Result code: {rc}, "
+                f"Result code: {rc}{reason_str}, "
                 f"Host: {self.host}:{self.port}. "
                 f"Attempting reconnect with exponential backoff..."
             )
@@ -272,9 +282,9 @@ class MqttClientManager:
 
     def connect_with_retry(
         self, 
-        max_retries: int = 5, 
-        initial_delay: float = 1.0,
-        max_delay: float = 60.0,
+        max_retries: int = 3,  # 5 → 3으로 감소 (빠른 실패)
+        initial_delay: float = 0.5,  # 1.0 → 0.5로 감소
+        max_delay: float = 10.0,  # 60.0 → 10.0으로 감소
         backoff_factor: float = 2.0
     ) -> bool:
         """
@@ -326,6 +336,14 @@ class MqttClientManager:
                         except Exception as e:
                             logger.warning(f"⚠️ MQTT loop_start 실패: {e}")
                     
+                    # 연결 타임아웃 설정 (3초)
+                    try:
+                        import socket
+                        sock = self.client.socket()
+                        if sock:
+                            sock.settimeout(3.0)
+                    except:
+                        pass  # socket 설정 실패해도 계속 진행
                     result = self.client.connect(self.host, self.port, keepalive=60)
                 except ValueError as e:
                     # "Invalid host" 오류 처리
