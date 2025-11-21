@@ -2,13 +2,20 @@
  * 설비 모니터링 페이지
  * 
  * 실시간 설비 상태 및 센서 데이터를 Grafana 대시보드로 표시
+ * Grafana API를 사용하여 동적으로 대시보드 URL을 생성합니다.
  */
 
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import type { DeviceSummary, SensorStatusResponse } from '@/types/sensor'
 import { getSensorStatus } from '@/services/sensors/sensorService'
-import { GRAFANA_CONFIG } from '@/utils/grafana'
+import {
+  GRAFANA_CONFIG,
+  buildGrafanaDashboardUrl,
+  getGrafanaDashboard,
+  checkGrafanaConnection,
+  type GrafanaDashboard,
+} from '@/utils/grafana'
 import Loading from '@/components/common/Loading'
 
 const Monitoring: React.FC = () => {
@@ -23,23 +30,37 @@ const Monitoring: React.FC = () => {
   const [refreshKey, setRefreshKey] = useState(0)
   const [iframeLoading, setIframeLoading] = useState(true)
   const [iframeError, setIframeError] = useState<string | null>(null)
+  const [dashboardInfo, setDashboardInfo] = useState<GrafanaDashboard | null>(null)
+  const [grafanaConnected, setGrafanaConnected] = useState<boolean | null>(null)
   const timeoutRef = useRef<NodeJS.Timeout | null>(null)
-  const [serverStatus, setServerStatus] = useState<{
-    checking: boolean
-    reachable: boolean | null
-    message: string
-  }>({ checking: false, reachable: null, message: '' })
 
   // 시간 범위 옵션
   const timeRangeOptions = [
-    { value: '1h', label: '최근 1시간' },
-    { value: '6h', label: '최근 6시간' },
-    { value: '24h', label: '최근 24시간' },
-    { value: '7d', label: '최근 7일' },
-    { value: '30d', label: '최근 30일' },
+    { value: '1h', label: '최근 1시간', from: 'now-1h', to: 'now' },
+    { value: '6h', label: '최근 6시간', from: 'now-6h', to: 'now' },
+    { value: '24h', label: '최근 24시간', from: 'now-24h', to: 'now' },
+    { value: '7d', label: '최근 7일', from: 'now-7d', to: 'now' },
+    { value: '30d', label: '최근 30일', from: 'now-30d', to: 'now' },
   ]
 
-  // 시간 범위 선택 기능은 환경 변수 URL 사용 시 비활성화됨
+  // 선택된 시간 범위에 해당하는 from/to 값
+  const selectedTimeRange = useMemo(() => {
+    const option = timeRangeOptions.find(opt => opt.value === timeRange)
+    return option ? { from: option.from, to: option.to } : { from: 'now-6h', to: 'now' }
+  }, [timeRange])
+
+  // Grafana 대시보드 URL 생성 (API 기반)
+  const grafanaDashboardUrl = useMemo(() => {
+    if (!selectedDevice || !GRAFANA_CONFIG.DEFAULT_DASHBOARD_UID) {
+      return ''
+    }
+    
+    return buildGrafanaDashboardUrl(
+      GRAFANA_CONFIG.DEFAULT_DASHBOARD_UID,
+      selectedDevice.device_id,
+      selectedTimeRange
+    )
+  }, [selectedDevice, selectedTimeRange])
 
   // 설비 목록 가져오기
   useEffect(() => {
@@ -61,11 +82,9 @@ const Monitoring: React.FC = () => {
               if (device) {
                 setSelectedDevice(device)
               } else {
-                // deviceId가 없으면 첫 번째 설비 선택
                 setSelectedDevice(data.devices[0])
               }
             } else {
-              // deviceId가 없으면 첫 번째 설비 선택
               setSelectedDevice(data.devices[0])
             }
           } else {
@@ -87,6 +106,62 @@ const Monitoring: React.FC = () => {
     fetchDevices()
   }, [deviceId])
 
+  // Grafana 서버 연결 확인
+  useEffect(() => {
+    const checkConnection = async () => {
+      try {
+        const connected = await checkGrafanaConnection()
+        setGrafanaConnected(connected)
+        if (import.meta.env.DEV) {
+          console.log('[Monitoring] Grafana 서버 연결 상태:', connected)
+        }
+      } catch (error) {
+        setGrafanaConnected(false)
+        if (import.meta.env.DEV) {
+          console.error('[Monitoring] Grafana 서버 연결 확인 실패:', error)
+        }
+      }
+    }
+
+    checkConnection()
+  }, [])
+
+  // Grafana 대시보드 정보 가져오기
+  useEffect(() => {
+    const fetchDashboardInfo = async () => {
+      if (!GRAFANA_CONFIG.DEFAULT_DASHBOARD_UID) {
+        setIframeError('Grafana 대시보드 UID가 설정되지 않았습니다.\n\n환경 변수 VITE_GRAFANA_DASHBOARD_UID를 확인하세요.')
+        setIframeLoading(false)
+        return
+      }
+
+      if (!GRAFANA_CONFIG.API_KEY) {
+        setIframeError('Grafana API 키가 설정되지 않았습니다.\n\n환경 변수 VITE_GRAFANA_API_KEY를 확인하세요.')
+        setIframeLoading(false)
+        return
+      }
+
+      try {
+        const dashboard = await getGrafanaDashboard(GRAFANA_CONFIG.DEFAULT_DASHBOARD_UID)
+        if (dashboard) {
+          setDashboardInfo(dashboard)
+          if (import.meta.env.DEV) {
+            console.log('[Monitoring] 대시보드 정보:', dashboard)
+          }
+        } else {
+          setIframeError(`대시보드를 찾을 수 없습니다: ${GRAFANA_CONFIG.DEFAULT_DASHBOARD_UID}\n\nGrafana에서 해당 UID의 대시보드가 존재하는지 확인하세요.`)
+          setIframeLoading(false)
+        }
+      } catch (err: any) {
+        console.error('[Monitoring] 대시보드 정보 가져오기 실패:', err)
+        setIframeError(`대시보드 정보를 가져올 수 없습니다.\n\n에러: ${err.message || '알 수 없는 오류'}\n\n확인 사항:\n1. Grafana API 키가 올바른지 확인\n2. Grafana 서버가 실행 중인지 확인\n3. 대시보드 UID가 올바른지 확인`)
+        setIframeLoading(false)
+      }
+    }
+
+    fetchDashboardInfo()
+  }, [])
+
   // 설비 변경 시 URL 업데이트
   const handleDeviceChange = (device: DeviceSummary) => {
     setSelectedDevice(device)
@@ -97,36 +172,24 @@ const Monitoring: React.FC = () => {
   // 새로고침
   const handleRefresh = () => {
     setRefreshKey(prev => prev + 1)
+    setIframeLoading(true)
+    setIframeError(null)
   }
 
   // 내보내기 (Grafana URL을 새 창으로 열기)
   const handleExport = () => {
-    const grafanaUrl = grafanaDashboardUrl
-    if (grafanaUrl) {
+    if (grafanaDashboardUrl) {
       if (import.meta.env.DEV) {
-        console.log('[Monitoring] 새 창에서 Grafana 대시보드 열기:', grafanaUrl)
+        console.log('[Monitoring] 새 창에서 Grafana 대시보드 열기:', grafanaDashboardUrl)
       }
-      window.open(grafanaUrl, '_blank', 'noopener,noreferrer')
+      window.open(grafanaDashboardUrl, '_blank', 'noopener,noreferrer')
     } else {
-      alert('Grafana 대시보드 URL이 설정되지 않았습니다. 환경 변수 VITE_GRAFANA_DASHBOARD_URL을 확인하세요.')
+      alert('Grafana 대시보드 URL을 생성할 수 없습니다.')
     }
   }
 
-  // Grafana 대시보드 URL (환경 변수에 설정된 URL만 사용, 생성하지 않음)
-  const grafanaDashboardUrl = GRAFANA_CONFIG.DASHBOARD_URL || ''
-  
-  // URL이 설정되지 않았으면 에러 표시
-  useEffect(() => {
-    if (!grafanaDashboardUrl) {
-      const errorMsg = 'Grafana 대시보드 URL이 설정되지 않았습니다.\n\n해결 방법:\n1. frontend/.env 파일에 다음 추가:\n   VITE_GRAFANA_DASHBOARD_URL=http://192.168.80.99:3001/public-dashboards/...\n\n2. Vite 개발 서버 재시작'
-      setIframeError(errorMsg)
-      setIframeLoading(false)
-    }
-  }, [grafanaDashboardUrl])
-
   // iframe 로드 완료 핸들러
   const handleIframeLoad = () => {
-    // 타임아웃 취소
     if (timeoutRef.current) {
       clearTimeout(timeoutRef.current)
       timeoutRef.current = null
@@ -135,46 +198,38 @@ const Monitoring: React.FC = () => {
     if (import.meta.env.DEV) {
       console.log('[Monitoring] iframe onLoad 이벤트 발생')
     }
-    // 약간의 지연 후 로딩 상태 해제 (실제 콘텐츠 로드 확인)
+    
     setTimeout(() => {
       setIframeLoading(false)
       setIframeError(null)
-      // iframe이 로드되면 서버가 작동하는 것이므로 서버 상태 업데이트
-      setServerStatus({ 
-        checking: false, 
-        reachable: true, 
-        message: '대시보드 로드 완료' 
-      })
       if (import.meta.env.DEV) {
         console.log('[Monitoring] Grafana 대시보드 로드 완료')
       }
-    }, 1000)
+    }, 500)
   }
 
-  // iframe 에러 핸들러 (일부 브라우저에서 작동하지 않을 수 있음)
+  // iframe 에러 핸들러
   const handleIframeError = () => {
     if (import.meta.env.DEV) {
       console.error('[Monitoring] iframe onError 이벤트 발생')
     }
     setIframeLoading(false)
     
-    // X-Frame-Options 에러 감지
-    const errorMsg = `Grafana 대시보드 로드 실패\n\n가능한 원인:\n1. Grafana 서버에서 iframe 임베딩이 차단됨\n   → Grafana 설정 파일에서 allow_embedding = true 확인\n   → 또는 Grafana UI에서 Settings → Security → Allow embedding 확인\n   → Grafana 서버 재시작 필요\n\n2. X-Frame-Options 정책 위반\n   → Grafana 서버가 X-Frame-Options: deny를 설정하고 있음\n   → allow_embedding = true 설정으로 해결 가능\n\n3. CORS 정책 위반\n   → Grafana 설정에서 CORS 허용 확인\n\n해결 방법:\n1. Grafana 설정 파일(grafana.ini)에 다음 추가:\n   [security]\n   allow_embedding = true\n\n2. Grafana 서버 재시작\n\n3. "새 창에서 열기" 버튼으로 URL 직접 테스트`
+    const errorMsg = `Grafana 대시보드 로드 실패\n\n가능한 원인:\n1. Grafana 서버에서 iframe 임베딩이 차단됨\n   → Grafana 설정 파일에서 allow_embedding = true 확인\n   → Grafana 서버 재시작 필요\n\n2. X-Frame-Options 정책 위반\n   → allow_embedding = true 설정으로 해결 가능\n\n3. CORS 정책 위반\n   → Grafana 설정에서 CORS 허용 확인`
     
     setIframeError(errorMsg)
   }
 
-  // X-Frame-Options 및 보안 에러 감지 (전역 에러 리스너)
+  // X-Frame-Options 및 보안 에러 감지
   useEffect(() => {
     const handleSecurityError = (event: ErrorEvent) => {
       const errorMessage = event.message || ''
       
-      // X-Frame-Options 에러 감지
       if (errorMessage.includes('X-Frame-Options') || 
           errorMessage.includes('frame') || 
           errorMessage.includes('Refused to display')) {
         setIframeLoading(false)
-        const errorMsg = `❌ X-Frame-Options 정책 위반: iframe 임베딩 차단\n\n직접 URL 접속은 성공하지만 iframe에서 로드되지 않습니다.\n이는 Grafana 서버에서 iframe 임베딩이 차단되었기 때문입니다.\n\n현재 URL: ${grafanaDashboardUrl}\n\n에러 메시지:\n"Refused to display in a frame because it set 'X-Frame-Options' to 'deny'"\n\n🔧 해결 방법 (설정 파일 수정):\n\n1. Grafana 설정 파일(grafana.ini) 찾기:\n   - Linux: /etc/grafana/grafana.ini\n   - Docker: 볼륨 마운트된 설정 파일\n   - Windows: Grafana 설치 디렉토리/conf/grafana.ini\n\n2. [security] 섹션에 다음 추가:\n   [security]\n   allow_embedding = true\n\n3. Grafana 서버 재시작 (필수!):\n   - Docker: docker restart grafana\n   - Linux: sudo systemctl restart grafana-server\n   - Windows: Grafana 서비스 재시작\n\n4. 재시작 후 확인:\n   - 브라우저 캐시 삭제 (Ctrl+Shift+Delete)\n   - 페이지 새로고침 (F5)\n   - "새 창에서 열기" 버튼으로 URL이 정상 작동하는지 확인\n\n💡 참고:\n   - 직접 URL 접속이 성공한다면 네트워크 문제가 아니라 iframe 임베딩 정책 문제입니다.\n   - 설정 파일 수정 후 반드시 Grafana 서버를 재시작해야 합니다.`
+        const errorMsg = `❌ X-Frame-Options 정책 위반: iframe 임베딩 차단\n\n직접 URL 접속은 성공하지만 iframe에서 로드되지 않습니다.\n이는 Grafana 서버에서 iframe 임베딩이 차단되었기 때문입니다.\n\n현재 URL: ${grafanaDashboardUrl}\n\n🔧 해결 방법:\n\n1. Grafana 설정 파일(grafana.ini)에 다음 추가:\n   [security]\n   allow_embedding = true\n\n2. Grafana 서버 재시작 (필수!)\n\n3. 재시작 후 확인:\n   - 브라우저 캐시 삭제 (Ctrl+Shift+Delete)\n   - 페이지 새로고침 (F5)`
         setIframeError(errorMsg)
         if (import.meta.env.DEV) {
           console.error('[Monitoring] 보안 정책 에러 감지:', errorMessage)
@@ -182,7 +237,6 @@ const Monitoring: React.FC = () => {
       }
     }
 
-    // 콘솔 에러도 감지 (X-Frame-Options는 콘솔에만 나타날 수 있음)
     const originalConsoleError = console.error
     console.error = (...args: any[]) => {
       const errorText = args.join(' ')
@@ -203,8 +257,7 @@ const Monitoring: React.FC = () => {
 
   // 설비 변경 시 iframe 상태 초기화 및 타임아웃 설정
   useEffect(() => {
-    // URL이 설정되어 있으면 iframe 로드 시작
-    if (grafanaDashboardUrl) {
+    if (grafanaDashboardUrl && selectedDevice) {
       setIframeLoading(true)
       setIframeError(null)
       
@@ -212,125 +265,30 @@ const Monitoring: React.FC = () => {
         console.log('[Monitoring] Grafana 대시보드 URL:', grafanaDashboardUrl)
       }
       
-        // Grafana 서버 연결 확인 (비동기, 실패해도 계속 진행)
-        // iframe이 실제로 로드되면 그것이 가장 정확한 지표이므로, 이 체크는 참고용으로만 사용
-        const checkGrafanaConnection = async () => {
-          // 실제 사용 중인 대시보드 URL의 origin을 사용
-          const baseUrl = grafanaDashboardUrl 
-            ? new URL(grafanaDashboardUrl).origin 
-            : (import.meta.env.VITE_GRAFANA_URL?.replace(/\/$/, '') || 'http://localhost:3000')
-
-          if (import.meta.env.DEV) {
-            console.log('[Monitoring] Grafana 서버 확인:', baseUrl)
-            console.log('[Monitoring] 전체 대시보드 URL:', grafanaDashboardUrl)
-          }
-        // 서버 상태를 확인 중으로 표시하지 않음 (사용자 경험 개선)
-        // 대신 백그라운드에서 조용히 확인
-        
-        try {
-          // Public Dashboard는 로드 시간이 오래 걸릴 수 있으므로 타임아웃을 늘림 (10초)
-          const controller = new AbortController()
-          const timeoutId = setTimeout(() => controller.abort(), 10000)
-          
-          try {
-            const startTime = Date.now()
-            // HEAD 요청으로 빠르게 확인 (응답 본문 없이 헤더만 확인)
-            await fetch(baseUrl, {
-              method: 'HEAD',
-              signal: controller.signal,
-              mode: 'no-cors', // CORS 우회
-              cache: 'no-cache',
-            })
-            clearTimeout(timeoutId)
-            const duration = Date.now() - startTime
-            
-            if (import.meta.env.DEV) {
-              console.log(`[Monitoring] ✅ Grafana 서버 연결 확인 성공 (${duration}ms)`)
-            }
-            
-            setServerStatus({ 
-              checking: false, 
-              reachable: true, 
-              message: `서버 연결 확인됨 (${duration}ms)` 
-            })
-          } catch (err: any) {
-            clearTimeout(timeoutId)
-            
-            if (err?.name === 'AbortError') {
-              // 타임아웃은 서버가 느리게 응답하거나 네트워크 문제일 수 있음
-              if (import.meta.env.DEV) {
-                console.warn(`[Monitoring] ⚠️ 서버 연결 확인 타임아웃 (10초) - ${baseUrl} 서버가 응답하지 않습니다`)
-              }
-              setServerStatus({ 
-                checking: false, 
-                reachable: false, 
-                message: `서버 연결 타임아웃 (10초)\n\n가능한 원인:\n1. Grafana 서버가 실행되지 않음\n2. 네트워크 연결 문제\n3. 방화벽이 포트를 차단\n\n해결 방법:\n1. Grafana 서버 상태 확인\n2. 네트워크 연결 확인\n3. 브라우저에서 직접 URL 접속 테스트`
-              })
-            } else {
-              // 네트워크 에러 등
-              if (import.meta.env.DEV) {
-                console.warn('[Monitoring] 서버 연결 확인 실패:', err?.message || err)
-              }
-              setServerStatus({ 
-                checking: false, 
-                reachable: false, 
-                message: `서버 연결 실패\n\n에러: ${err?.message || '알 수 없는 오류'}\n\n가능한 원인:\n1. Grafana 서버가 실행되지 않음\n2. 네트워크 연결 문제\n3. 방화벽이 포트를 차단\n\n해결 방법:\n1. Grafana 서버 상태 확인\n2. 네트워크 연결 확인\n3. 브라우저에서 직접 URL 접속 테스트`
-              })
-            }
-          }
-          
-        } catch (error: any) {
-          // 예상치 못한 에러
-          if (import.meta.env.DEV) {
-            console.error('[Monitoring] 서버 연결 확인 중 예상치 못한 오류:', error?.message || error)
-          }
-          setServerStatus({ 
-            checking: false, 
-            reachable: false, 
-            message: `서버 연결 확인 중 오류 발생\n\n에러: ${error?.message || '알 수 없는 오류'}`
-          })
-        }
-      }
-      
-      // 비동기로 실행 (실패해도 계속 진행)
-      checkGrafanaConnection().catch(() => {
-        // 조용히 실패 처리
-      })
-      
       // 이전 타임아웃이 있으면 취소
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current)
       }
       
-      // 15초 후에도 로딩 중이면 타임아웃으로 간주 (더 긴 시간 제공)
+      // 30초 후에도 로딩 중이면 타임아웃으로 간주
       timeoutRef.current = setTimeout(() => {
         setIframeLoading((prevLoading) => {
           if (prevLoading) {
-            const baseUrl = String(import.meta.env.VITE_GRAFANA_URL || 'http://localhost:3000')
-            const dashboardUrl = grafanaDashboardUrl || ''
-            
-            // 더 상세한 진단 정보 제공
-            const errorMsg = `대시보드 로딩 시간이 초과되었습니다.\n\n가능한 원인:\n1. Grafana 서버에서 iframe 임베딩이 차단됨 (X-Frame-Options)\n   → Grafana 설정 파일에서 allow_embedding = true 확인\n   → 또는 Grafana UI에서 Settings → Security → Allow embedding 확인\n   → Grafana 서버 재시작 필요\n\n2. Grafana 서버가 실행 중이지 않음\n   → 브라우저에서 직접 URL 접속 시도\n\n3. 대시보드 URL이 올바르지 않음\n   → 환경 변수 VITE_GRAFANA_DASHBOARD_URL 확인 필요\n\n사용 중인 URL:\n${dashboardUrl || '(URL이 설정되지 않음)'}\n\n💡 해결 방법:\n1. Grafana 설정 파일(grafana.ini)에 다음 추가:\n   [security]\n   allow_embedding = true\n\n2. Grafana 서버 재시작\n\n3. "새 창에서 열기" 버튼으로 URL 직접 테스트\n4. 브라우저 콘솔(F12)에서 X-Frame-Options 에러 확인`
+            const errorMsg = `대시보드 로딩 시간이 초과되었습니다.\n\n가능한 원인:\n1. Grafana 서버에서 iframe 임베딩이 차단됨 (X-Frame-Options)\n   → Grafana 설정 파일에서 allow_embedding = true 확인\n   → Grafana 서버 재시작 필요\n\n2. Grafana 서버가 실행 중이지 않음\n   → 브라우저에서 직접 URL 접속 시도\n\n3. 네트워크 연결 문제\n\n사용 중인 URL:\n${grafanaDashboardUrl}\n\n💡 해결 방법:\n1. Grafana 설정 파일(grafana.ini)에 다음 추가:\n   [security]\n   allow_embedding = true\n\n2. Grafana 서버 재시작\n\n3. "새 창에서 열기" 버튼으로 URL 직접 테스트`
             
             setIframeError(errorMsg)
             if (import.meta.env.DEV) {
               console.warn('[Monitoring] Grafana 대시보드 로딩 타임아웃', {
-                url: dashboardUrl,
-                deviceId: String(selectedDevice?.device_id || ''),
-                deviceName: String(selectedDevice?.name || ''),
-              troubleshooting: [
-                '1. Grafana 서버가 실행 중인지 확인',
-                '2. Grafana 설정에서 allow_embedding = true 확인',
-                '3. 대시보드 UID가 실제 Grafana 대시보드와 일치하는지 확인',
-                '4. 브라우저 콘솔에서 네트워크 에러 확인'
-              ]
+                url: grafanaDashboardUrl,
+                deviceId: selectedDevice?.device_id,
+                deviceName: selectedDevice?.name,
               })
             }
             return false
           }
           return prevLoading
         })
-      }, 15000)
+      }, 30000)
 
       return () => {
         if (timeoutRef.current) {
@@ -339,7 +297,7 @@ const Monitoring: React.FC = () => {
         }
       }
     }
-  }, [selectedDevice, timeRange, refreshKey])
+  }, [selectedDevice, timeRange, refreshKey, grafanaDashboardUrl])
 
   if (loading && !selectedDevice) {
     return (
@@ -385,6 +343,9 @@ const Monitoring: React.FC = () => {
       <div className="mb-6">
         <h1 className="text-3xl font-bold text-gray-800 mb-2">설비 모니터링</h1>
         <p className="text-gray-600">실시간 설비 상태 및 센서 데이터</p>
+        {dashboardInfo && (
+          <p className="text-sm text-gray-500 mt-1">대시보드: {dashboardInfo.title}</p>
+        )}
       </div>
 
       {/* 필터 및 액션 버튼 */}
@@ -454,6 +415,33 @@ const Monitoring: React.FC = () => {
         </div>
       </div>
 
+      {/* Grafana 연결 상태 표시 */}
+      {grafanaConnected !== null && (
+        <div className={`mb-4 p-3 rounded-lg border ${
+          grafanaConnected 
+            ? 'bg-green-50 border-green-200' 
+            : 'bg-yellow-50 border-yellow-200'
+        }`}>
+          <div className="flex items-center gap-2">
+            {grafanaConnected ? (
+              <>
+                <svg className="w-5 h-5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <p className="text-green-800 text-sm font-medium">Grafana 서버 연결됨</p>
+              </>
+            ) : (
+              <>
+                <svg className="w-5 h-5 text-yellow-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+                <p className="text-yellow-800 text-sm font-medium">Grafana 서버 연결 확인 중...</p>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Grafana 대시보드 섹션 */}
       <div className="bg-white rounded-lg shadow-lg overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
@@ -461,10 +449,7 @@ const Monitoring: React.FC = () => {
             실시간 모니터링 대시보드
           </h2>
           <button
-            onClick={() => {
-              const url = grafanaDashboardUrl
-              window.open(url, '_blank', 'noopener,noreferrer')
-            }}
+            onClick={handleExport}
             className="p-2 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
             title="전체 화면으로 열기"
           >
@@ -476,7 +461,7 @@ const Monitoring: React.FC = () => {
         
         {/* Grafana 대시보드 iframe */}
         <div className="relative" style={{ height: 'calc(100vh - 400px)', minHeight: '600px' }}>
-          {selectedDevice ? (
+          {selectedDevice && grafanaDashboardUrl ? (
             <>
               {/* 로딩 오버레이 */}
               {iframeLoading && (
@@ -523,171 +508,33 @@ const Monitoring: React.FC = () => {
                       >
                         ✨ 새 창에서 열기 (권장)
                       </button>
-                      <button
-                        onClick={() => {
-                          const url = grafanaDashboardUrl
-                          if (url) {
-                            navigator.clipboard.writeText(url).then(() => {
-                              alert('URL이 클립보드에 복사되었습니다.\n\n브라우저 주소창에 붙여넣어 직접 테스트하세요.')
-                            }).catch(() => {
-                              alert(`URL을 복사할 수 없습니다.\n\n다음 URL을 직접 사용하세요:\n\n${url}`)
-                            })
-                          }
-                        }}
-                        className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
-                      >
-                        📋 URL 복사
-                      </button>
-                    </div>
-                    <div className="mt-4 space-y-3">
-                      {/* 서버 상태 표시 */}
-                      {serverStatus.checking && (
-                        <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-                          <div className="flex items-center gap-2">
-                            <div className="w-4 h-4 border-2 border-yellow-600 border-t-transparent rounded-full animate-spin"></div>
-                            <p className="text-yellow-800 text-sm">{serverStatus.message}</p>
-                          </div>
-                        </div>
-                      )}
-                      
-                      {!serverStatus.checking && serverStatus.reachable !== null && (
-                        <div className={`p-3 border rounded-lg ${
-                          serverStatus.reachable 
-                            ? 'bg-green-50 border-green-200' 
-                            : 'bg-red-50 border-red-200'
-                        }`}>
-                          <div className="flex items-center gap-2 mb-2">
-                            {serverStatus.reachable ? (
-                              <>
-                                <svg className="w-5 h-5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                </svg>
-                                <p className="text-green-800 text-sm font-medium">서버 연결 성공</p>
-                              </>
-                            ) : (
-                              <>
-                                <svg className="w-5 h-5 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                </svg>
-                                <p className="text-red-800 text-sm font-medium">서버 연결 실패</p>
-                              </>
-                            )}
-                          </div>
-                          <p className={`text-xs ${serverStatus.reachable ? 'text-green-700' : 'text-red-700'}`}>
-                            {serverStatus.message}
-                          </p>
-                          {!serverStatus.reachable && (
-                            <div className="mt-2 text-xs text-red-600 space-y-1">
-                              <p className="font-medium">💡 확인 사항:</p>
-                              <ul className="list-disc list-inside ml-2 space-y-0.5">
-                                <li>Grafana 서버가 실행 중인지 확인</li>
-                                <li>URL이 올바른지 확인: <code className="bg-red-100 px-1 rounded">{import.meta.env.VITE_GRAFANA_URL || 'http://localhost:3000'}</code></li>
-                                <li>방화벽 설정 확인</li>
-                                <li>네트워크 연결 확인</li>
-                                <li>서버 로그 확인</li>
-                              </ul>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                      
-                      {/* 진단 도구 */}
-                      <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                        <p className="text-blue-800 text-sm font-medium mb-2">🔧 진단 도구</p>
-                        <div className="space-y-2">
-                          <div className="text-xs text-gray-600 mb-2 p-2 bg-white rounded border">
-                            <strong>현재 사용 중인 URL:</strong><br />
-                            <code className="text-xs break-all">{grafanaDashboardUrl || '(URL이 설정되지 않음)'}</code>
-                          </div>
-                          <button
-                            onClick={() => {
-                              window.open(grafanaDashboardUrl, '_blank', 'noopener,noreferrer')
-                            }}
-                            className="block w-full text-left text-xs text-blue-600 hover:text-blue-800 underline"
-                          >
-                            📍 대시보드 URL 직접 열기 (새 창)
-                          </button>
-                          <button
-                            onClick={() => {
-                              const baseUrl = grafanaDashboardUrl ? new URL(grafanaDashboardUrl).origin : (import.meta.env.VITE_GRAFANA_URL?.replace(/\/$/, '') || 'http://localhost:3000')
-                              window.open(baseUrl, '_blank', 'noopener,noreferrer')
-                            }}
-                            className="block w-full text-left text-xs text-blue-600 hover:text-blue-800 underline"
-                          >
-                            📍 Grafana 서버 직접 접속: {grafanaDashboardUrl ? new URL(grafanaDashboardUrl).origin : (import.meta.env.VITE_GRAFANA_URL || 'http://localhost:3000')}
-                          </button>
-                          <button
-                            onClick={async () => {
-                              // 실제 사용 중인 대시보드 URL의 origin을 사용
-                              const baseUrl = grafanaDashboardUrl 
-                                ? new URL(grafanaDashboardUrl).origin 
-                                : (import.meta.env.VITE_GRAFANA_URL?.replace(/\/$/, '') || 'http://localhost:3000')
-                              
-                              setServerStatus({ checking: true, reachable: null, message: `서버 연결 확인 중: ${baseUrl}` })
-                              try {
-                                const controller = new AbortController()
-                                const timeoutId = setTimeout(() => controller.abort(), 8000)
-                                const startTime = Date.now()
-                                await fetch(baseUrl, { method: 'GET', signal: controller.signal, mode: 'no-cors' })
-                                clearTimeout(timeoutId)
-                                const duration = Date.now() - startTime
-                                setServerStatus({ checking: false, reachable: true, message: `서버 연결 성공 (${duration}ms)` })
-                              } catch (err: any) {
-                                if (err?.name === 'AbortError') {
-                                  setServerStatus({ checking: false, reachable: false, message: `서버 연결 타임아웃 (8초) - ${baseUrl} 서버가 실행 중인지 확인하세요` })
-                                } else {
-                                  setServerStatus({ checking: false, reachable: false, message: `연결 실패: ${err?.message || '알 수 없는 오류'} (${baseUrl})` })
-                                }
-                              }
-                            }}
-                            className="block w-full text-left text-xs text-blue-600 hover:text-blue-800 underline"
-                          >
-                            🔄 서버 연결 다시 확인
-                          </button>
-                          <p className="text-blue-700 text-xs mt-2">
-                            브라우저 콘솔(F12)에서 상세한 진단 정보를 확인할 수 있습니다.
-                          </p>
-                        </div>
-                      </div>
                     </div>
                   </div>
                 </div>
               )}
 
               {/* iframe */}
-              {grafanaDashboardUrl ? (
-                <iframe
-                  key={refreshKey}
-                  src={grafanaDashboardUrl}
-                  className="w-full h-full border-0"
-                  title={`${String(selectedDevice?.name || '')} 모니터링 대시보드`}
-                  allow="fullscreen"
-                  style={{ minHeight: '600px' }}
-                  onLoad={handleIframeLoad}
-                  onError={handleIframeError}
-                  sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-presentation"
-                  referrerPolicy="no-referrer-when-downgrade"
-                />
-              ) : (
-                <div className="flex items-center justify-center h-full bg-gray-50">
-                  <div className="text-center">
-                    <svg className="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    <p className="text-gray-500 text-lg">Grafana 대시보드 URL이 설정되지 않았습니다</p>
-                    <p className="text-gray-400 text-sm mt-2">환경 변수 VITE_GRAFANA_DASHBOARD_URL을 확인하세요</p>
-                  </div>
-                </div>
-              )}
+              <iframe
+                key={refreshKey}
+                src={grafanaDashboardUrl}
+                className="w-full h-full border-0"
+                title={`${selectedDevice?.name || ''} 모니터링 대시보드`}
+                allow="fullscreen"
+                style={{ minHeight: '600px' }}
+                onLoad={handleIframeLoad}
+                onError={handleIframeError}
+                sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-presentation"
+                referrerPolicy="no-referrer-when-downgrade"
+              />
             </>
           ) : (
             <div className="flex items-center justify-center h-full bg-gray-50">
               <div className="text-center">
                 <svg className="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
-                <p className="text-gray-500 text-lg">Grafana 대시보드 뷰</p>
-                <p className="text-gray-400 text-sm mt-1">실시간 센서 데이터 및 성능 메트릭</p>
+                <p className="text-gray-500 text-lg">Grafana 대시보드 URL을 생성할 수 없습니다</p>
+                <p className="text-gray-400 text-sm mt-2">환경 변수를 확인하세요</p>
               </div>
             </div>
           )}
@@ -698,6 +545,4 @@ const Monitoring: React.FC = () => {
 }
 
 export default Monitoring
-
-
 

@@ -11,9 +11,9 @@ interface SidebarItem {
 }
 
 const menuItems: SidebarItem[] = [
-  { path: '/', label: '대시보드', icon: '📊' },
+  { path: '/', label: '운영관리', icon: '📊' },
   { path: '/alerts', label: '알림', icon: '🚨' },
-  { path: '/sensors', label: '센서', icon: '📡' },
+  { path: '/monitoring', label: '모니터링', icon: '📈' },
   { path: '/equipment', label: '설비 목록', icon: '🏭' },
   { path: '/reports', label: '보고서', icon: '📄' },
 ]
@@ -22,6 +22,10 @@ function Sidebar() {
   const location = useLocation()
 
   const isActive = (path: string) => {
+    if (path === '/monitoring') {
+      // 모니터링 페이지는 /monitoring으로 시작하는 모든 경로에서 활성화
+      return location.pathname.startsWith('/monitoring')
+    }
     return location.pathname === path
   }
 
