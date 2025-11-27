@@ -183,7 +183,11 @@ class InfluxDBManager:
         """
         주기적으로 버퍼를 플러시하는 백그라운드 스레드 함수.
         """
-        logger.info("🔄 InfluxDB periodic flush thread started.")
+        try:
+            logger.info("🔄 InfluxDB periodic flush thread started.")
+        except (ValueError, OSError):
+            # 로거가 닫힌 파일에 쓰려고 시도하는 경우 무시
+            pass
         
         while True:
             try:
@@ -191,17 +195,25 @@ class InfluxDBManager:
                 
                 with self.buffer_lock:
                     if len(self.buffer) > 0:
-                        logger.debug(
-                            f"⏰ Periodic flush triggered. "
-                            f"Buffer size: {len(self.buffer)}"
-                        )
+                        try:
+                            logger.debug(
+                                f"⏰ Periodic flush triggered. "
+                                f"Buffer size: {len(self.buffer)}"
+                            )
+                        except (ValueError, OSError):
+                            # 로거가 닫힌 파일에 쓰려고 시도하는 경우 무시
+                            pass
                         self._flush_buffer_internal()
                         
             except Exception as e:
-                logger.error(
-                    f"❌ Error in periodic flush thread: {e}",
-                    exc_info=True
-                )
+                try:
+                    logger.error(
+                        f"❌ Error in periodic flush thread: {e}",
+                        exc_info=True
+                    )
+                except (ValueError, OSError):
+                    # 로거가 닫힌 파일에 쓰려고 시도하는 경우 무시
+                    pass
                 time.sleep(self.flush_interval)
     
     def _flush_buffer(self):
@@ -266,10 +278,14 @@ class InfluxDBManager:
         success = self._write_batch(points_to_write, influx_points)
         
         if not success:
-            logger.warning(
-                f"⚠️ Batch write failed. "
-                f"Re-queuing {len(points_to_write)} points for retry."
-            )
+            try:
+                logger.warning(
+                    f"⚠️ Batch write failed. "
+                    f"Re-queuing {len(points_to_write)} points for retry."
+                )
+            except (ValueError, OSError):
+                # 로거가 닫힌 파일에 쓰려고 시도하는 경우 무시
+                pass
     
     def _write_batch(
         self,
@@ -489,7 +505,11 @@ class InfluxDBManager:
         """
         리소스를 정리합니다.
         """
-        logger.info("🔄 Closing InfluxDB manager...")
+        try:
+            logger.info("🔄 Closing InfluxDB manager...")
+        except (ValueError, OSError):
+            # 로거가 닫힌 파일에 쓰려고 시도하는 경우 무시
+            pass
         
         # 남은 버퍼 플러시
         self._flush_buffer()
@@ -498,9 +518,17 @@ class InfluxDBManager:
         try:
             self.write_api.close()
             self.client.close()
-            logger.info("✅ InfluxDB manager closed successfully.")
+            try:
+                logger.info("✅ InfluxDB manager closed successfully.")
+            except (ValueError, OSError):
+                # 로거가 닫힌 파일에 쓰려고 시도하는 경우 무시
+                pass
         except Exception as e:
-            logger.error(f"❌ Error closing InfluxDB manager: {e}", exc_info=True)
+            try:
+                logger.error(f"❌ Error closing InfluxDB manager: {e}", exc_info=True)
+            except (ValueError, OSError):
+                # 로거가 닫힌 파일에 쓰려고 시도하는 경우 무시
+                pass
 
 
 # -------------------------------------------------------------------
