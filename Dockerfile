@@ -2,7 +2,7 @@
 # Multi-stage build for optimized image size
 
 # Stage 1: Build stage
-FROM python:3.12-slim as builder
+FROM python:3.12-slim AS builder
 
 WORKDIR /app
 
