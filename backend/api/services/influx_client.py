@@ -238,9 +238,13 @@ class InfluxDBManager:
         if not points_to_write:
             return
         
-        logger.info(
-            f"📤 Flushing {len(points_to_write)} points to InfluxDB..."
-        )
+        try:
+            logger.info(
+                f"📤 Flushing {len(points_to_write)} points to InfluxDB..."
+            )
+        except (ValueError, OSError):
+            # 로거가 닫힌 파일에 쓰려고 시도하는 경우 무시
+            pass
         
         # 포인트를 InfluxDB Point 객체로 변환
         influx_points = []
@@ -262,16 +266,24 @@ class InfluxDBManager:
                 influx_points.append(point)
                 
             except Exception as e:
-                logger.error(
-                    f"❌ Failed to convert point. "
-                    f"Measurement: {buffered_point.measurement}, Error: {e}",
-                    exc_info=True
-                )
+                try:
+                    logger.error(
+                        f"❌ Failed to convert point. "
+                        f"Measurement: {buffered_point.measurement}, Error: {e}",
+                        exc_info=True
+                    )
+                except (ValueError, OSError):
+                    # 로거가 닫힌 파일에 쓰려고 시도하는 경우 무시
+                    pass
                 # 변환 실패한 포인트는 재시도 큐에 추가
                 self._retry_point(buffered_point)
         
         if not influx_points:
-            logger.warning("⚠️ No valid points to write after conversion.")
+            try:
+                logger.warning("⚠️ No valid points to write after conversion.")
+            except (ValueError, OSError):
+                # 로거가 닫힌 파일에 쓰려고 시도하는 경우 무시
+                pass
             return
         
         # 배치 쓰기 시도
@@ -308,38 +320,54 @@ class InfluxDBManager:
         # 모든 포인트가 같은 버킷인지 확인
         bucket = buffered_points[0].bucket
         if not all(p.bucket == bucket for p in buffered_points):
-            logger.warning(
-                "⚠️ Points have different buckets. "
-                "Writing separately by bucket."
-            )
+            try:
+                logger.warning(
+                    "⚠️ Points have different buckets. "
+                    "Writing separately by bucket."
+                )
+            except (ValueError, OSError):
+                # 로거가 닫힌 파일에 쓰려고 시도하는 경우 무시
+                pass
             return self._write_batch_by_bucket(buffered_points, influx_points)
         
         try:
             # 배치 쓰기
             self.write_api.write(bucket=bucket, record=influx_points)
             
-            logger.info(
-                f"✅ Successfully wrote {len(influx_points)} points to bucket '{bucket}'."
-            )
+            try:
+                logger.info(
+                    f"✅ Successfully wrote {len(influx_points)} points to bucket '{bucket}'."
+                )
+            except (ValueError, OSError):
+                # 로거가 닫힌 파일에 쓰려고 시도하는 경우 무시
+                pass
             return True
             
         except InfluxDBError as e:
-            logger.error(
-                f"❌ InfluxDB error during batch write. "
-                f"Bucket: {bucket}, Points: {len(influx_points)}, Error: {e}",
-                exc_info=True
-            )
+            try:
+                logger.error(
+                    f"❌ InfluxDB error during batch write. "
+                    f"Bucket: {bucket}, Points: {len(influx_points)}, Error: {e}",
+                    exc_info=True
+                )
+            except (ValueError, OSError):
+                # 로거가 닫힌 파일에 쓰려고 시도하는 경우 무시
+                pass
             # 재시도 큐에 추가
             for buffered_point in buffered_points:
                 self._retry_point(buffered_point)
             return False
             
         except Exception as e:
-            logger.error(
-                f"❌ Unexpected error during batch write. "
-                f"Bucket: {bucket}, Points: {len(influx_points)}, Error: {e}",
-                exc_info=True
-            )
+            try:
+                logger.error(
+                    f"❌ Unexpected error during batch write. "
+                    f"Bucket: {bucket}, Points: {len(influx_points)}, Error: {e}",
+                    exc_info=True
+                )
+            except (ValueError, OSError):
+                # 로거가 닫힌 파일에 쓰려고 시도하는 경우 무시
+                pass
             # 재시도 큐에 추가
             for buffered_point in buffered_points:
                 self._retry_point(buffered_point)
@@ -368,14 +396,22 @@ class InfluxDBManager:
             
             try:
                 self.write_api.write(bucket=bucket, record=bucket_points)
-                logger.info(
-                    f"✅ Successfully wrote {len(bucket_points)} points to bucket '{bucket}'."
-                )
+                try:
+                    logger.info(
+                        f"✅ Successfully wrote {len(bucket_points)} points to bucket '{bucket}'."
+                    )
+                except (ValueError, OSError):
+                    # 로거가 닫힌 파일에 쓰려고 시도하는 경우 무시
+                    pass
             except Exception as e:
-                logger.error(
-                    f"❌ Failed to write to bucket '{bucket}'. Error: {e}",
-                    exc_info=True
-                )
+                try:
+                    logger.error(
+                        f"❌ Failed to write to bucket '{bucket}'. Error: {e}",
+                        exc_info=True
+                    )
+                except (ValueError, OSError):
+                    # 로거가 닫힌 파일에 쓰려고 시도하는 경우 무시
+                    pass
                 for buffered_point in bucket_buffered:
                     self._retry_point(buffered_point)
                 all_success = False
@@ -390,12 +426,16 @@ class InfluxDBManager:
             buffered_point: 재시도할 포인트
         """
         if buffered_point.retry_count >= buffered_point.max_retries:
-            logger.error(
-                f"❌ Point exceeded max retries. Dropping point. "
-                f"Measurement: {buffered_point.measurement}, "
-                f"Bucket: {buffered_point.bucket}, "
-                f"Retry count: {buffered_point.retry_count}"
-            )
+            try:
+                logger.error(
+                    f"❌ Point exceeded max retries. Dropping point. "
+                    f"Measurement: {buffered_point.measurement}, "
+                    f"Bucket: {buffered_point.bucket}, "
+                    f"Retry count: {buffered_point.retry_count}"
+                )
+            except (ValueError, OSError):
+                # 로거가 닫힌 파일에 쓰려고 시도하는 경우 무시
+                pass
             return
         
         buffered_point.retry_count += 1
@@ -405,11 +445,15 @@ class InfluxDBManager:
             time.sleep(self.retry_delay * buffered_point.retry_count)  # 지수적 지연
             with self.buffer_lock:
                 self.buffer.append(buffered_point)
-            logger.info(
-                f"🔄 Re-queued point for retry. "
-                f"Measurement: {buffered_point.measurement}, "
-                f"Retry count: {buffered_point.retry_count}/{buffered_point.max_retries}"
-            )
+            try:
+                logger.info(
+                    f"🔄 Re-queued point for retry. "
+                    f"Measurement: {buffered_point.measurement}, "
+                    f"Retry count: {buffered_point.retry_count}/{buffered_point.max_retries}"
+                )
+            except (ValueError, OSError):
+                # 로거가 닫힌 파일에 쓰려고 시도하는 경우 무시
+                pass
         
         threading.Thread(
             target=delayed_retry,
@@ -421,7 +465,11 @@ class InfluxDBManager:
         """
         수동으로 버퍼를 플러시합니다.
         """
-        logger.info("🔄 Manual flush requested.")
+        try:
+            logger.info("🔄 Manual flush requested.")
+        except (ValueError, OSError):
+            # 로거가 닫힌 파일에 쓰려고 시도하는 경우 무시
+            pass
         self._flush_buffer()
     
     def query_sensor_status(
@@ -456,7 +504,11 @@ class InfluxDBManager:
               |> keep(columns: ["device_id"])
             '''
             
-            logger.debug(f"Querying sensor status from InfluxDB. Bucket: {bucket}")
+            try:
+                logger.debug(f"Querying sensor status from InfluxDB. Bucket: {bucket}")
+            except (ValueError, OSError):
+                # 로거가 닫힌 파일에 쓰려고 시도하는 경우 무시
+                pass
             
             # 쿼리 실행
             result = self.query_api.query(query=query, org=settings.INFLUX_ORG)
@@ -476,10 +528,14 @@ class InfluxDBManager:
             total_count = active_count  # 임시: 활성 센서 수를 전체로 간주
             inactive_count = 0  # 현재는 비활성 센서를 구분할 수 없음
             
-            logger.info(
-                f"✅ Sensor status queried. "
-                f"Active: {active_count}, Total: {total_count}"
-            )
+            try:
+                logger.info(
+                    f"✅ Sensor status queried. "
+                    f"Active: {active_count}, Total: {total_count}"
+                )
+            except (ValueError, OSError):
+                # 로거가 닫힌 파일에 쓰려고 시도하는 경우 무시
+                pass
             
             return {
                 "total_count": total_count,
