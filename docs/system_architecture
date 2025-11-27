@@ -1,0 +1,45 @@
+```mermaid
+graph TD
+    %% Subsystems Definition
+    subgraph "Edge Layer (Raspberry Pi)"
+        Sensor[IoT Sensors\n(MPU6050, DHT11)] -->|Raw Data| SensorPub[sensor_final.py]
+        SensorPub -->|Window Data| InferenceWorker[inference_worker.py]
+        InferenceWorker -->|Feature Extraction V17| AI_Model[ONNX Models\n(MLP / IsoForest)]
+    end
+
+    subgraph "Infrastructure Layer (Backend PC)"
+        MQTT{Mosquitto Broker}
+        Telegraf[Telegraf Agent]
+        InfluxDB[(InfluxDB v2)]
+    end
+
+    subgraph "Application Layer (Backend PC)"
+        FastAPI[FastAPI Backend]
+        AlertEngine[Alert Logic\n(Priority Check)]
+        Grafana[Grafana Dashboard]
+    end
+
+    subgraph "User Interface Layer"
+        React[React Frontend]
+    end
+
+    %% Data Flow Connections
+    %% 1. Sensor Data Flow
+    SensorPub --"MQTT: factory/sensor/#"--> MQTT
+    MQTT --> Telegraf
+    Telegraf --> InfluxDB
+
+    %% 2. AI Inference Flow
+    AI_Model -->|Prediction Result| InferenceWorker
+    InferenceWorker --"MQTT: factory/inference/results/#"--> MQTT
+    MQTT -->|Subscribe| FastAPI
+
+    %% 3. Visualization Flow
+    InfluxDB -->|Query (Flux)| Grafana
+    Grafana --"Iframe Embedding"--> React
+
+    %% 4. Alerting Flow (Two-Track)
+    Grafana --"Webhook (Critical)"--> FastAPI
+    FastAPI -->|Logic Check| AlertEngine
+    AlertEngine --"WebSocket (Warning/Notice)"--> React
+```
