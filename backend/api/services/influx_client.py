@@ -108,12 +108,16 @@ class InfluxDBManager:
         )
         self.flush_thread.start()
         
-        logger.info(
-            f"✅ InfluxDB manager initialized. "
-            f"URL: {settings.INFLUX_URL}, "
-            f"Buffer size: {buffer_size}, "
-            f"Flush interval: {flush_interval}s"
-        )
+        try:
+            logger.info(
+                f"✅ InfluxDB manager initialized. "
+                f"URL: {settings.INFLUX_URL}, "
+                f"Buffer size: {buffer_size}, "
+                f"Flush interval: {flush_interval}s"
+            )
+        except (ValueError, OSError):
+            # 로거가 닫힌 파일에 쓰려고 시도하는 경우 무시
+            pass
     
     def write_point(
         self,
@@ -151,18 +155,26 @@ class InfluxDBManager:
                 self.buffer.append(buffered_point)
                 buffer_len = len(self.buffer)
                 
-                logger.debug(
-                    f"📥 Point buffered. "
-                    f"Measurement: {measurement}, "
-                    f"Buffer size: {buffer_len}/{self.buffer_size}"
-                )
+                try:
+                    logger.debug(
+                        f"📥 Point buffered. "
+                        f"Measurement: {measurement}, "
+                        f"Buffer size: {buffer_len}/{self.buffer_size}"
+                    )
+                except (ValueError, OSError):
+                    # 로거가 닫힌 파일에 쓰려고 시도하는 경우 무시
+                    pass
                 
                 # 버퍼가 가득 차면 즉시 플러시
                 if buffer_len >= self.buffer_size:
-                    logger.info(
-                        f"🔄 Buffer full ({buffer_len} points). "
-                        f"Triggering immediate flush..."
-                    )
+                    try:
+                        logger.info(
+                            f"🔄 Buffer full ({buffer_len} points). "
+                            f"Triggering immediate flush..."
+                        )
+                    except (ValueError, OSError):
+                        # 로거가 닫힌 파일에 쓰려고 시도하는 경우 무시
+                        pass
                     threading.Thread(
                         target=self._flush_buffer,
                         daemon=True,
@@ -172,11 +184,15 @@ class InfluxDBManager:
             return True
             
         except Exception as e:
-            logger.error(
-                f"❌ Failed to buffer point. "
-                f"Measurement: {measurement}, Error: {e}",
-                exc_info=True
-            )
+            try:
+                logger.error(
+                    f"❌ Failed to buffer point. "
+                    f"Measurement: {measurement}, Error: {e}",
+                    exc_info=True
+                )
+            except (ValueError, OSError):
+                # 로거가 닫힌 파일에 쓰려고 시도하는 경우 무시
+                pass
             return False
     
     def _periodic_flush(self):
