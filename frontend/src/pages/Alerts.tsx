@@ -10,7 +10,6 @@ import type { Alert } from '@/types/alert'
 import { AlertsPanel } from '@/components/alerts/AlertsPanel'
 import { AlertToastContainer } from '@/components/alerts/AlertToast'
 import { useWebSocketContext } from '@/context/WebSocketContext'
-import { useDeviceContext } from '@/context/DeviceContext'
 import { getDismissedAlerts, dismissAlert } from '@/utils/localStorage'
 
 function Alerts() {

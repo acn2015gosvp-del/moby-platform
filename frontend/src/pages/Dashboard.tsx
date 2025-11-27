@@ -6,7 +6,6 @@
 
 import { useState, useMemo } from 'react'
 import { useParams, Navigate } from 'react-router-dom'
-import { useDeviceContext } from '@/context/DeviceContext'
 import Loading from '@/components/common/Loading'
 
 // 운영관리 대시보드 전용 Grafana 설정

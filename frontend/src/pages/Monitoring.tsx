@@ -6,8 +6,7 @@
  */
 
 import React, { useState, useEffect, useRef, useMemo } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
-import type { DeviceSummary } from '@/types/sensor'
+import { useParams } from 'react-router-dom'
 import {
   GRAFANA_CONFIG,
   buildGrafanaDashboardUrl,
@@ -20,11 +19,9 @@ import Loading from '@/components/common/Loading'
 
 const Monitoring: React.FC = () => {
   const { deviceId } = useParams<{ deviceId?: string }>()
-  const navigate = useNavigate()
-  const { devices, selectedDevice, setSelectedDeviceId } = useDeviceContext()
-  const [timeRange, setTimeRange] = useState<string>('1h')
+  const { selectedDevice, setSelectedDeviceId } = useDeviceContext()
+  const [timeRange] = useState<string>('1h')
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
   const [refreshKey, setRefreshKey] = useState(0)
   const [iframeLoading, setIframeLoading] = useState(true)
   const [iframeError, setIframeError] = useState<string | null>(null)
@@ -128,18 +125,6 @@ const Monitoring: React.FC = () => {
     fetchDashboardInfo()
   }, [])
 
-  // 설비 변경 핸들러 - DeviceContext를 통해 URL 업데이트
-  const handleDeviceChange = (newDeviceId: string) => {
-    setSelectedDeviceId(newDeviceId)
-    setRefreshKey(prev => prev + 1) // iframe 강제 새로고침
-  }
-
-  // 새로고침
-  const handleRefresh = () => {
-    setRefreshKey(prev => prev + 1)
-    setIframeLoading(true)
-    setIframeError(null)
-  }
 
   // 내보내기 (Grafana URL을 새 창으로 열기)
   const handleExport = () => {
@@ -273,22 +258,6 @@ const Monitoring: React.FC = () => {
     )
   }
 
-  if (error && !selectedDevice) {
-    return (
-      <div>
-        <h1 className="text-3xl font-bold mb-6 text-gray-800">설비 모니터링</h1>
-        <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg text-red-800">
-          {error}
-        </div>
-        <button
-          onClick={() => window.location.reload()}
-          className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-        >
-          다시 시도
-        </button>
-      </div>
-    )
-  }
 
   if (!selectedDevice) {
     return (

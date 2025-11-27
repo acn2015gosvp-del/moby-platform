@@ -17,7 +17,6 @@ interface EquipmentCardProps {
 const EquipmentCard: React.FC<EquipmentCardProps> = ({ device, onClick, onRemove }) => {
   const navigate = useNavigate()
   const [isHovered, setIsHovered] = useState(false)
-  const [isLoading, setIsLoading] = useState(false)
   const [isNewlyAdded, setIsNewlyAdded] = useState(false)
   
   const handleRemove = (e: React.MouseEvent) => {
@@ -126,17 +125,11 @@ const EquipmentCard: React.FC<EquipmentCardProps> = ({ device, onClick, onRemove
           ? 'shadow-xl scale-[1.02] border-2 border-blue-600'
           : 'border-2 border-transparent hover:shadow-lg'
         }
-        ${isLoading ? 'opacity-60 pointer-events-none' : ''}
         ${isNewlyAdded ? 'animate-pulse border-2 border-green-400 shadow-lg' : ''}
         focus:outline-none focus:ring-4 focus:ring-blue-300
         active:scale-[0.98]
       `}
     >
-      {isLoading && (
-        <div className="absolute inset-0 flex items-center justify-center bg-white bg-opacity-70 rounded-lg z-10">
-          <div className="w-10 h-10 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
-        </div>
-      )}
 
       <div className="flex items-start justify-between mb-4">
         <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">

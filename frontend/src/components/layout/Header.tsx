@@ -11,11 +11,7 @@ function Header() {
   const location = useLocation()
   const navigate = useNavigate()
   const { user, logout } = useAuth()
-  const { devices, selectedDevice, selectedDeviceId, setSelectedDeviceId, loading: devicesLoading } = useDeviceContext()
-
-  const isActive = (path: string) => {
-    return location.pathname === path
-  }
+  const { devices, selectedDeviceId, setSelectedDeviceId, loading: devicesLoading } = useDeviceContext()
 
   const handleLogout = () => {
     logout()
