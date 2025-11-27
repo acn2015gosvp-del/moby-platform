@@ -260,7 +260,7 @@ export async function downloadReportAsPDF(
     await new Promise(resolve => setTimeout(resolve, 1500))
     
     // 폰트 로드 확인
-    if (document.fonts && document.fonts.check) {
+    if (document.fonts && typeof document.fonts.load === 'function') {
       const fontLoaded = await document.fonts.load('400 12px "Noto Sans KR"')
       console.log('[PDF] 폰트 로드 확인:', fontLoaded)
     }

@@ -44,10 +44,8 @@ export function WebSocketToast() {
         const wsAlert = alert as WebSocketAlert
 
         // CONNECTED 메시지는 무시 (연결 확인용)
-        if (wsAlert.type === 'CONNECTED') {
-          console.log('[WebSocketToast] CONNECTED 메시지 무시:', wsAlert.message)
-          return
-        }
+        // type이 'CRITICAL' | 'WARNING' | 'NOTICE' | 'RESOLVED' | undefined이므로
+        // CONNECTED는 별도로 체크하지 않고, 실제 알림 타입만 처리
 
         // 신규 형식 (type 필드 사용) - CRITICAL, WARNING, NOTICE, RESOLVED 처리
         if (wsAlert.type && ['CRITICAL', 'WARNING', 'NOTICE', 'RESOLVED'].includes(wsAlert.type)) {

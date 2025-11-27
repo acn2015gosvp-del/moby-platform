@@ -30,7 +30,7 @@ const Monitoring: React.FC = () => {
   const [iframeError, setIframeError] = useState<string | null>(null)
   const [dashboardInfo, setDashboardInfo] = useState<GrafanaDashboard | null>(null)
   const [grafanaConnected, setGrafanaConnected] = useState<boolean | null>(null)
-  const timeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // 시간 범위 옵션
   const timeRangeOptions = [

@@ -44,7 +44,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
   })
 
   const wsRef = useRef<WebSocket | null>(null)
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const reconnectAttemptsRef = useRef(0)
   const isConnectingRef = useRef(false)  // 연결 시도 중인지 추적
 
@@ -241,7 +241,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
 
   useEffect(() => {
     // enabled가 변경될 때만 연결/해제
-    let timer: NodeJS.Timeout | null = null
+    let timer: ReturnType<typeof setTimeout> | null = null
     
     if (enabled) {
       // 초기 렌더링 후 약간의 지연을 두고 WebSocket 연결 (UI 블로킹 방지)

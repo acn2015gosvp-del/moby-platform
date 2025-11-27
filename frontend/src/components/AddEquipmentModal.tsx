@@ -5,7 +5,6 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react'
-import type { DeviceSummary } from '@/types/sensor'
 
 export interface AddEquipmentFormData {
   name: string

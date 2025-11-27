@@ -16,9 +16,6 @@ export function AlertTicker({ alerts }: AlertTickerProps) {
   const [isPaused, setIsPaused] = useState(false)
   const tickerRef = useRef<HTMLDivElement>(null)
 
-  // critical 알림이 있는지 확인
-  const hasCriticalAlerts = alerts.some(alert => alert.level === 'critical')
-
   // 티커 자동 스크롤
   useEffect(() => {
     if (alerts.length === 0 || isPaused) return

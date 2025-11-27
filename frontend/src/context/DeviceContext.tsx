@@ -4,7 +4,7 @@
  * 현재 선택된 설비를 전역으로 관리하고 URL과 동기화합니다.
  */
 
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react'
+import { createContext, useContext, useState, useEffect, type ReactNode } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import type { DeviceSummary } from '@/types/sensor'
 import { getSensorStatus } from '@/services/sensors/sensorService'

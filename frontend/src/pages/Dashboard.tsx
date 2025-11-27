@@ -19,7 +19,6 @@ const OPERATION_DASHBOARD_CONFIG = {
 
 function Dashboard() {
   const { deviceId } = useParams<{ deviceId?: string }>()
-  const { selectedDevice } = useDeviceContext()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [refreshKey, setRefreshKey] = useState(0)

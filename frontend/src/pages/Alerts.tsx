@@ -15,7 +15,6 @@ import { getDismissedAlerts, dismissAlert } from '@/utils/localStorage'
 
 function Alerts() {
   const { deviceId } = useParams<{ deviceId?: string }>()
-  const { selectedDevice } = useDeviceContext()
 
   // deviceId가 없으면 설비 목록으로 리다이렉트
   if (!deviceId) {

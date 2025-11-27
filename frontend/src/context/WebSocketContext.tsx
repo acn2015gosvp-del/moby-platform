@@ -41,14 +41,14 @@ export function WebSocketProvider({
     console.log('[WebSocketContext] 구독자 목록 업데이트:', subscribers.size)
   }, [subscribers])
 
-  const handleMessage = useCallback((alert: Alert) => {
-    // 항상 최신 구독자 목록을 참조
-    const currentSubscribers = subscribersRef.current
-    console.log('[WebSocketContext] 메시지 수신, 구독자에게 전달:', {
-      alertId: alert.id,
-      alertType: alert.type || alert.level,
-      subscriberCount: currentSubscribers.size,
-    })
+    const handleMessage = useCallback((alert: Alert) => {
+      // 항상 최신 구독자 목록을 참조
+      const currentSubscribers = subscribersRef.current
+      console.log('[WebSocketContext] 메시지 수신, 구독자에게 전달:', {
+        alertId: alert.id,
+        alertType: alert.level,
+        subscriberCount: currentSubscribers.size,
+      })
     
     if (currentSubscribers.size === 0) {
       console.warn('[WebSocketContext] ⚠️ 구독자가 없습니다! WebSocketToast가 구독하지 않았을 수 있습니다.')
