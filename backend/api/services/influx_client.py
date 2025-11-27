@@ -545,10 +545,14 @@ class InfluxDBManager:
             }
             
         except Exception as e:
-            logger.error(
-                f"❌ Failed to query sensor status from InfluxDB. Error: {e}",
-                exc_info=True
-            )
+            try:
+                logger.error(
+                    f"❌ Failed to query sensor status from InfluxDB. Error: {e}",
+                    exc_info=True
+                )
+            except (ValueError, OSError):
+                # 로거가 닫힌 파일에 쓰려고 시도하는 경우 무시
+                pass
             # 에러 발생 시 빈 결과 반환
             return {
                 "total_count": 0,
