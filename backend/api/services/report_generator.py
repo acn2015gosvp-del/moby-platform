@@ -7,8 +7,9 @@ Gemini API를 사용하여 주간/일일 보고서를 자동 생성합니다.
 import logging
 import json
 import os
-from datetime import datetime
+from datetime import datetime, date
 from typing import Dict, List, Any, Optional
+from sqlalchemy.orm import Session
 
 try:
     import google.generativeai as genai
@@ -119,7 +120,29 @@ class MOBYReportGenerator:
                 
                 # 모델이 실제로 작동하는지 간단한 테스트 요청
                 test_response = test_model.generate_content("test")
-                if test_response and test_response.text:
+                
+                # 안전하게 테스트 응답 확인
+                test_text = None
+                try:
+                    if hasattr(test_response, 'text') and test_response.text:
+                        test_text = test_response.text
+                    elif hasattr(test_response, 'candidates') and test_response.candidates:
+                        candidate = test_response.candidates[0]
+                        if hasattr(candidate, 'content') and hasattr(candidate.content, 'parts'):
+                            parts = candidate.content.parts
+                            if parts and hasattr(parts[0], 'text'):
+                                test_text = parts[0].text
+                
+                except AttributeError:
+                    # response.text 접근 실패 시 candidates에서 추출 시도
+                    if hasattr(test_response, 'candidates') and test_response.candidates:
+                        candidate = test_response.candidates[0]
+                        if hasattr(candidate, 'content') and hasattr(candidate.content, 'parts'):
+                            parts = candidate.content.parts
+                            if parts and hasattr(parts[0], 'text'):
+                                test_text = parts[0].text
+                
+                if test_text:
                     # 모델이 정상 작동함
                     self.model = test_model
                     self.model_name = model_name
@@ -132,9 +155,41 @@ class MOBYReportGenerator:
                 error_msg = str(e)
                 errors.append(f"{model_name}: {error_msg}")
                 logger.warning(f"❌ 모델 '{model_name}' 실패: {error_msg}")
+                
+                # API 키 정지 상태 감지
+                if "CONSUMER_SUSPENDED" in error_msg or "has been suspended" in error_msg.lower():
+                    # 첫 번째 정지 오류 발견 시 즉시 중단하고 명확한 메시지 반환
+                    api_key_masked = api_key[:10] + "..." if api_key and len(api_key) > 10 else "***"
+                    raise ValueError(
+                        f"🚫 Gemini API 키가 정지되었습니다.\n\n"
+                        f"**문제**: API 키가 Google에 의해 정지되었습니다.\n"
+                        f"**원인**: 할당량 초과, 정책 위반, 또는 보안 문제일 수 있습니다.\n\n"
+                        f"**해결 방법**:\n"
+                        f"1. Google AI Studio (https://makersuite.google.com/app/apikey)에 접속\n"
+                        f"2. 새로운 API 키 생성 또는 기존 키 상태 확인\n"
+                        f"3. .env 파일의 GEMINI_API_KEY 값을 새 API 키로 업데이트\n"
+                        f"4. 백엔드 서버 재시작\n\n"
+                        f"**참고**: 현재 사용 중인 API 키: {api_key_masked}\n"
+                        f"상세 오류: {error_msg[:200]}"
+                    )
                 continue
         
         if self.model is None:
+            # API 키 정지 상태가 이미 감지되었는지 확인
+            has_suspended_error = any("CONSUMER_SUSPENDED" in err or "has been suspended" in err.lower() for err in errors)
+            
+            if has_suspended_error:
+                # 정지 오류가 있으면 이미 위에서 처리되었을 것이지만, 안전장치
+                api_key_masked = api_key[:10] + "..." if api_key and len(api_key) > 10 else "***"
+                raise ValueError(
+                    f"🚫 Gemini API 키가 정지되었습니다.\n\n"
+                    f"**해결 방법**:\n"
+                    f"1. Google AI Studio (https://makersuite.google.com/app/apikey)에서 새 API 키 생성\n"
+                    f"2. .env 파일의 GEMINI_API_KEY 업데이트\n"
+                    f"3. 백엔드 서버 재시작\n\n"
+                    f"**현재 API 키**: {api_key_masked}"
+                )
+            
             error_summary = "\n".join([f"  - {err}" for err in errors])
             raise ValueError(
                 f"사용 가능한 Gemini 모델을 찾을 수 없습니다.\n\n"
@@ -238,11 +293,73 @@ class MOBYReportGenerator:
             response = self.model.generate_content(prompt)
             elapsed_time = time.time() - start_time
             
-            if not response.text:
-                raise ValueError("Gemini API가 빈 응답을 반환했습니다.")
+            # 안전하게 응답 텍스트 추출
+            response_text = None
+            try:
+                # 먼저 response.text를 시도 (일반적인 경우)
+                if hasattr(response, 'text') and response.text:
+                    response_text = response.text
+                elif hasattr(response, 'candidates') and response.candidates:
+                    # candidates에서 텍스트 추출
+                    for candidate in response.candidates:
+                        if hasattr(candidate, 'content') and candidate.content:
+                            if hasattr(candidate.content, 'parts'):
+                                parts_text = []
+                                for part in candidate.content.parts:
+                                    if hasattr(part, 'text') and part.text:
+                                        parts_text.append(part.text)
+                                if parts_text:
+                                    response_text = ''.join(parts_text)
+                                    break
+                        elif hasattr(candidate, 'parts'):
+                            # 직접 parts가 있는 경우
+                            parts_text = []
+                            for part in candidate.parts:
+                                if hasattr(part, 'text') and part.text:
+                                    parts_text.append(part.text)
+                            if parts_text:
+                                response_text = ''.join(parts_text)
+                                break
+                
+                if not response_text:
+                    # finish_reason 확인
+                    finish_reason = None
+                    if hasattr(response, 'candidates') and response.candidates:
+                        finish_reason = getattr(response.candidates[0], 'finish_reason', None)
+                    
+                    error_detail = f"응답에 유효한 텍스트가 없습니다."
+                    if finish_reason:
+                        error_detail += f" finish_reason: {finish_reason}"
+                    
+                    logger.error(f"Gemini API 응답 처리 실패: {error_detail}")
+                    logger.error(f"응답 구조: candidates={hasattr(response, 'candidates')}, text={hasattr(response, 'text')}")
+                    
+                    raise ValueError(f"Gemini API가 빈 응답을 반환했습니다. {error_detail}")
+                
+            except AttributeError as ae:
+                # response.text 접근 시 발생하는 AttributeError 처리
+                logger.error(f"Gemini API 응답 구조 오류: {ae}")
+                logger.error(f"응답 타입: {type(response)}, 속성: {dir(response)}")
+                
+                # 대체 방법으로 텍스트 추출 시도
+                if hasattr(response, 'candidates') and response.candidates:
+                    try:
+                        candidate = response.candidates[0]
+                        if hasattr(candidate, 'content') and hasattr(candidate.content, 'parts'):
+                            parts = candidate.content.parts
+                            if parts and hasattr(parts[0], 'text'):
+                                response_text = parts[0].text
+                            else:
+                                raise ValueError(f"응답에 유효한 Part가 없습니다. finish_reason: {getattr(candidate, 'finish_reason', 'unknown')}")
+                        else:
+                            raise ValueError(f"응답 구조가 예상과 다릅니다: {type(candidate)}")
+                    except Exception as e:
+                        raise ValueError(f"Gemini API 응답 처리 실패: {str(e)}")
+                else:
+                    raise ValueError(f"Gemini API 응답에 candidates가 없습니다. 응답 타입: {type(response)}")
             
-            logger.info(f"✅ 보고서 생성 완료 (소요 시간: {elapsed_time:.2f}초, 길이: {len(response.text)} 문자, 모델: {self.model_name})")
-            return response.text
+            logger.info(f"✅ 보고서 생성 완료 (소요 시간: {elapsed_time:.2f}초, 길이: {len(response_text)} 문자, 모델: {self.model_name})")
+            return response_text
             
         except Exception as e:
             error_msg = str(e)
@@ -276,10 +393,38 @@ class MOBYReportGenerator:
                     # 재시도
                     logger.info(f"재시도 중... (새 모델: {self.model_name})")
                     response = self.model.generate_content(prompt)
-                    if not response.text:
-                        raise ValueError("Gemini API가 빈 응답을 반환했습니다.")
-                    logger.info(f"보고서 생성 완료 (재시도 성공). 길이: {len(response.text)} 문자")
-                    return response.text
+                    
+                    # 안전하게 응답 텍스트 추출 (위와 동일한 로직)
+                    response_text = None
+                    try:
+                        if hasattr(response, 'text') and response.text:
+                            response_text = response.text
+                        elif hasattr(response, 'candidates') and response.candidates:
+                            for candidate in response.candidates:
+                                if hasattr(candidate, 'content') and candidate.content:
+                                    if hasattr(candidate.content, 'parts'):
+                                        parts_text = []
+                                        for part in candidate.content.parts:
+                                            if hasattr(part, 'text') and part.text:
+                                                parts_text.append(part.text)
+                                        if parts_text:
+                                            response_text = ''.join(parts_text)
+                                            break
+                    
+                    except AttributeError as ae:
+                        logger.error(f"재시도 중 응답 처리 오류: {ae}")
+                        if hasattr(response, 'candidates') and response.candidates:
+                            candidate = response.candidates[0]
+                            if hasattr(candidate, 'content') and hasattr(candidate.content, 'parts'):
+                                parts = candidate.content.parts
+                                if parts and hasattr(parts[0], 'text'):
+                                    response_text = parts[0].text
+                    
+                    if not response_text:
+                        raise ValueError("Gemini API가 빈 응답을 반환했습니다 (재시도).")
+                    
+                    logger.info(f"보고서 생성 완료 (재시도 성공). 길이: {len(response_text)} 문자")
+                    return response_text
                 except Exception as retry_error:
                     logger.error(f"재시도 실패: {retry_error}")
                     raise ValueError(
@@ -437,6 +582,128 @@ class MOBYReportGenerator:
 이제 위 템플릿에 맞춰 보고서를 작성해주세요.
 """
         return prompt
+
+
+def generate_daily_alert_report_text(db: Session, target_date: Optional[date] = None) -> str:
+    """
+    금일 발생한 알림을 조회하여 보고서 텍스트를 생성합니다.
+    
+    Args:
+        db: 데이터베이스 세션
+        target_date: 조회할 날짜 (없으면 오늘)
+        
+    Returns:
+        생성된 보고서 텍스트 (마크다운 형식)
+    """
+    from backend.api.services.alert_history_service import get_today_alerts
+    
+    try:
+        if target_date is None:
+            target_date = date.today()
+        
+        # 금일 알림 조회
+        alerts = get_today_alerts(db, target_date)
+        
+        if not alerts:
+            return f"# 📊 MOBY 일일 이상징후 보고서\n\n**보고 날짜:** {target_date}\n\n**발생한 이상징후가 없습니다.** ✅\n"
+        
+        # 보고서 텍스트 생성
+        report_lines = [
+            f"# 📊 MOBY 일일 이상징후 보고서",
+            f"",
+            f"**보고 날짜:** {target_date}",
+            f"**총 발생 건수:** {len(alerts)}건",
+            f"",
+            f"---",
+            f"",
+            f"## 발생한 이상징후 목록",
+            f"",
+        ]
+        
+        # 미확인 알림 수 계산
+        unchecked_count = sum(1 for alert in alerts if alert.check_status.value == "UNCHECKED")
+        if unchecked_count > 0:
+            report_lines.append(f"⚠️ **미확인 알림:** {unchecked_count}건")
+            report_lines.append(f"")
+        
+        # 알림별 상세 정보
+        for idx, alert in enumerate(alerts, 1):
+            status_icon = "❌" if alert.check_status.value == "UNCHECKED" else "✅"
+            report_lines.extend([
+                f"### {idx}. {status_icon} {alert.message}",
+                f"",
+                f"- **디바이스 ID:** {alert.device_id}",
+                f"- **발생 시각:** {alert.occurred_at.strftime('%Y-%m-%d %H:%M:%S')}",
+            ])
+            
+            if alert.error_code:
+                report_lines.append(f"- **에러 코드:** {alert.error_code}")
+            
+            if alert.raw_value:
+                try:
+                    raw_data = json.loads(alert.raw_value)
+                    report_lines.append(f"- **원시 데이터:** `{json.dumps(raw_data, ensure_ascii=False)[:100]}...`")
+                except:
+                    report_lines.append(f"- **원시 데이터:** `{alert.raw_value[:100]}...`")
+            
+            if alert.check_status.value == "CHECKED" and alert.checked_by:
+                report_lines.append(f"- **확인자:** {alert.checked_by}")
+            
+            report_lines.append(f"")
+        
+        # 요약
+        report_lines.extend([
+            f"---",
+            f"",
+            f"## 요약",
+            f"",
+            f"- 총 발생 건수: **{len(alerts)}건**",
+            f"- 미확인 건수: **{unchecked_count}건**",
+            f"- 확인 완료 건수: **{len(alerts) - unchecked_count}건**",
+        ])
+        
+        report_text = "\n".join(report_lines)
+        
+        logger.info(f"✅ 일일 알림 보고서 텍스트 생성 완료. 날짜: {target_date}, 건수: {len(alerts)}")
+        
+        return report_text
+        
+    except Exception as e:
+        logger.error(
+            f"❌ 일일 알림 보고서 생성 실패. 날짜: {target_date}, 오류: {e}",
+            exc_info=True
+        )
+        return f"# ❌ 보고서 생성 실패\n\n날짜: {target_date}\n오류: {str(e)}"
+
+
+def generate_daily_alert_report_html(db: Session, target_date: Optional[date] = None) -> str:
+    """
+    금일 발생한 알림을 조회하여 HTML 형식의 보고서를 생성합니다.
+    
+    Args:
+        db: 데이터베이스 세션
+        target_date: 조회할 날짜 (없으면 오늘)
+        
+    Returns:
+        생성된 HTML 보고서
+    """
+    try:
+        import markdown
+    except ImportError:
+        logger.warning("markdown 라이브러리가 설치되지 않았습니다. 마크다운 형식으로 반환합니다.")
+        # markdown이 없으면 마크다운 텍스트를 그대로 반환
+        markdown_text = generate_daily_alert_report_text(db, target_date)
+        # 간단한 HTML 변환
+        html = markdown_text.replace('\n', '<br>').replace('**', '<strong>').replace('**', '</strong>')
+        return f'<div style="font-family: sans-serif; padding: 20px;">{html}</div>'
+    
+    # 마크다운 텍스트 생성
+    markdown_text = generate_daily_alert_report_text(db, target_date)
+    
+    # HTML로 변환
+    html = markdown.markdown(markdown_text, extensions=['extra', 'codehilite'])
+    
+    return html
 
 
 # 전역 보고서 생성기 인스턴스

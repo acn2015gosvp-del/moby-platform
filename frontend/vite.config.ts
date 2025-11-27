@@ -12,11 +12,22 @@ export default defineConfig({
   },
   server: {
     port: 5173,
+    host: '0.0.0.0',
     proxy: {
       '/api': {
         target: 'http://localhost:8000',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, ''),
+        secure: false,  // ✅ HTTP 연결 허용 (개발 환경)
+        ws: true,       // ✅ WebSocket 프록시 지원 (중요!)
+        configure: (proxy, _options) => {
+          proxy.on('error', (err, _req, _res) => {
+            console.log('[Proxy Error]', err);
+          });
+          proxy.on('proxyReq', (proxyReq, req, _res) => {
+            console.log('[Proxy Request]', req.method, req.url);
+          });
+        }
       },
     },
   },

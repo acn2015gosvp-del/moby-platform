@@ -70,13 +70,45 @@ def _get_model() -> Optional[genai.GenerativeModel]:
                     
                     # 간단한 테스트 요청
                     test_response = test_model.generate_content("test")
-                    if test_response and test_response.text:
+                    
+                    # 안전하게 테스트 응답 확인
+                    test_text = None
+                    try:
+                        if hasattr(test_response, 'text') and test_response.text:
+                            test_text = test_response.text
+                        elif hasattr(test_response, 'candidates') and test_response.candidates:
+                            candidate = test_response.candidates[0]
+                            if hasattr(candidate, 'content') and candidate.content:
+                                if hasattr(candidate.content, 'parts'):
+                                    parts = candidate.content.parts
+                                    if parts and hasattr(parts[0], 'text'):
+                                        test_text = parts[0].text
+                    
+                    except AttributeError:
+                        # response.text 접근 실패 시 candidates에서 추출 시도
+                        if hasattr(test_response, 'candidates') and test_response.candidates:
+                            candidate = test_response.candidates[0]
+                            if hasattr(candidate, 'content') and hasattr(candidate.content, 'parts'):
+                                parts = candidate.content.parts
+                                if parts and hasattr(parts[0], 'text'):
+                                    test_text = parts[0].text
+                    
+                    if test_text:
                         _model = test_model
                         _model_name = model_name
                         logger.debug(f"Gemini 모델 초기화 완료: {model_name}")
                         break
                 except Exception as e:
+                    error_msg = str(e)
                     logger.debug(f"모델 '{model_name}' 초기화 실패: {e}")
+                    
+                    # API 키 정지 상태 감지
+                    if "CONSUMER_SUSPENDED" in error_msg or "has been suspended" in error_msg.lower():
+                        logger.error(
+                            f"Gemini API 키가 정지되었습니다. LLM 요약 기능을 사용할 수 없습니다. "
+                            f"Google AI Studio (https://makersuite.google.com/app/apikey)에서 새 API 키를 생성하세요."
+                        )
+                        return None
                     continue
             
             if _model is None:
@@ -132,7 +164,33 @@ def summarize_alert(data: dict, timeout: float = 30.0) -> Optional[str]:
         # Gemini API 호출
         response = model.generate_content(prompt)
         
-        summary = response.text if response and response.text else None
+        # 안전하게 응답 텍스트 추출
+        summary = None
+        try:
+            if hasattr(response, 'text') and response.text:
+                summary = response.text
+            elif hasattr(response, 'candidates') and response.candidates:
+                # candidates에서 텍스트 추출
+                for candidate in response.candidates:
+                    if hasattr(candidate, 'content') and candidate.content:
+                        if hasattr(candidate.content, 'parts'):
+                            parts_text = []
+                            for part in candidate.content.parts:
+                                if hasattr(part, 'text') and part.text:
+                                    parts_text.append(part.text)
+                            if parts_text:
+                                summary = ''.join(parts_text)
+                                break
+        
+        except AttributeError as ae:
+            # response.text 접근 실패 시 candidates에서 추출 시도
+            logger.warning(f"LLM 응답 처리 중 AttributeError: {ae}, candidates에서 추출 시도")
+            if hasattr(response, 'candidates') and response.candidates:
+                candidate = response.candidates[0]
+                if hasattr(candidate, 'content') and hasattr(candidate.content, 'parts'):
+                    parts = candidate.content.parts
+                    if parts and hasattr(parts[0], 'text'):
+                        summary = parts[0].text
         
         if summary:
             logger.info(

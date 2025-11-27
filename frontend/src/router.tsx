@@ -1,10 +1,10 @@
 /**
  * 라우터 설정
- * 코드 스플리팅 및 레이지 로딩 적용
+ * 설비 중심(Device-Centric) 구조로 중첩 라우팅 적용
  */
 
 import { lazy, Suspense, type ReactNode } from 'react'
-import { createBrowserRouter } from 'react-router-dom'
+import { createBrowserRouter, Navigate } from 'react-router-dom'
 import App from './App'
 import Loading from './components/common/Loading'
 import ProtectedRoute from './components/auth/ProtectedRoute'
@@ -12,7 +12,6 @@ import ProtectedRoute from './components/auth/ProtectedRoute'
 // 레이지 로딩을 위한 컴포넌트
 const Dashboard = lazy(() => import('./pages/Dashboard'))
 const Alerts = lazy(() => import('./pages/Alerts'))
-const Sensors = lazy(() => import('./pages/Sensors'))
 const Reports = lazy(() => import('./pages/Reports'))
 const EquipmentList = lazy(() => import('./pages/EquipmentList'))
 const Monitoring = lazy(() => import('./pages/Monitoring'))
@@ -51,40 +50,9 @@ export const router = createBrowserRouter([
       </ProtectedRoute>
     ),
     children: [
+      // 설비 목록 페이지 (진입점)
       {
         index: true,
-        element: (
-          <LazyWrapper>
-            <Dashboard />
-          </LazyWrapper>
-        ),
-      },
-      {
-        path: 'alerts',
-        element: (
-          <LazyWrapper>
-            <Alerts />
-          </LazyWrapper>
-        ),
-      },
-      {
-        path: 'sensors',
-        element: (
-          <LazyWrapper>
-            <Sensors />
-          </LazyWrapper>
-        ),
-      },
-      {
-        path: 'reports',
-        element: (
-          <LazyWrapper>
-            <Reports />
-          </LazyWrapper>
-        ),
-      },
-      {
-        path: 'equipment',
         element: (
           <LazyWrapper>
             <EquipmentList />
@@ -92,12 +60,67 @@ export const router = createBrowserRouter([
         ),
       },
       {
-        path: 'monitoring/:deviceId?',
+        path: 'devices',
         element: (
           <LazyWrapper>
-            <Monitoring />
+            <EquipmentList />
           </LazyWrapper>
         ),
+      },
+      // 설비별 중첩 라우팅
+      {
+        path: 'devices/:deviceId',
+        children: [
+          {
+            index: true,
+            element: <Navigate to="dashboard" replace />,
+          },
+          {
+            path: 'dashboard',
+            element: (
+              <LazyWrapper>
+                <Dashboard />
+              </LazyWrapper>
+            ),
+          },
+          {
+            path: 'alerts',
+            element: (
+              <LazyWrapper>
+                <Alerts />
+              </LazyWrapper>
+            ),
+          },
+          {
+            path: 'reports',
+            element: (
+              <LazyWrapper>
+                <Reports />
+              </LazyWrapper>
+            ),
+          },
+          {
+            path: 'monitoring',
+            element: (
+              <LazyWrapper>
+                <Monitoring />
+              </LazyWrapper>
+            ),
+          },
+        ],
+      },
+      // 기존 경로 호환성 (리다이렉트)
+      {
+        path: 'alerts',
+        element: <Navigate to="/devices" replace />,
+      },
+      {
+        path: 'reports',
+        element: <Navigate to="/devices" replace />,
+      },
+      {
+        path: 'monitoring/:deviceId?',
+        element: <Navigate to="/devices" replace />,
       },
     ],
   },

@@ -248,14 +248,24 @@ async def get_sensor_status() -> SuccessResponse[SensorStatusResponse]:
         
         # InfluxDB에서 센서 상태 조회
         # 최근 5분 내 데이터가 있는 센서를 활성으로 간주
-        sensor_status = query_sensor_status(
-            bucket=settings.INFLUX_BUCKET,
-            inactive_threshold_minutes=5
-        )
+        try:
+            sensor_status = query_sensor_status(
+                bucket=settings.INFLUX_BUCKET,
+                inactive_threshold_minutes=5
+            )
+        except Exception as e:
+            logger.warning(f"InfluxDB 조회 실패, 기본값 사용: {e}")
+            # InfluxDB 조회 실패 시 기본값 사용
+            sensor_status = {
+                "total_count": 0,
+                "active_count": 0,
+                "inactive_count": 0,
+                "devices": []
+            }
         
-        total_count = sensor_status["total_count"]
-        active_count = sensor_status["active_count"]
-        inactive_count = sensor_status["inactive_count"]
+        total_count = sensor_status.get("total_count", 0)
+        active_count = sensor_status.get("active_count", 0)
+        inactive_count = sensor_status.get("inactive_count", 0)
         device_ids = sensor_status.get("devices", [])
         
         # 상태 결정
@@ -454,7 +464,7 @@ async def get_sensor_status() -> SuccessResponse[SensorStatusResponse]:
         return response
         
     except Exception as e:
-        logger.exception(f"Unexpected error while retrieving sensor status: {e}")
+        logger.exception(f"센서 상태 조회 중 예상치 못한 오류 발생: {e}")
         raise InternalServerError(
-            message="An error occurred while retrieving sensor status"
+            message=f"센서 상태 조회 중 오류가 발생했습니다: {str(e)}"
         )

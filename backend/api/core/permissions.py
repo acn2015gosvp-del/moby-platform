@@ -18,7 +18,8 @@ from backend.api.services.schemas.models.core.logger import get_logger
 logger = get_logger(__name__)
 
 # OAuth2 스키마 (순환 import 방지를 위해 여기서 정의)
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
+# auto_error=False로 설정하여 토큰이 없어도 401 에러를 발생시키지 않음
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login", auto_error=False)
 
 
 def get_current_user(
@@ -39,6 +40,13 @@ def get_current_user(
         HTTPException: 토큰이 유효하지 않거나 사용자를 찾을 수 없는 경우
     """
     try:
+        # 토큰이 없는 경우 처리
+        if token is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="인증 토큰이 필요합니다."
+            )
+        
         # 토큰 디코딩
         payload = decode_access_token(token)
         if payload is None:

@@ -86,6 +86,11 @@ WORKFLOW_GEMINI_CURSOR_MASTER_v1.md
 - Never mix responsibilities
 - Always check existing files before generating new ones
 
+# 🛡️ Reliability & Security Rules (New)
+- **Encoding:** All Python file operations (open, write) and Email/MIME handling MUST explicitly specify `encoding='utf-8'`.
+- **Secrets:** NEVER hardcode API keys, passwords, or sensitive data. Always use `os.getenv` with `.env` file.
+- **Error Handling:** External service calls (SMTP, LLM API, Database) MUST be wrapped in `try-except` blocks with proper logging, not just `pass`.
+
 ---
 
 # 🔥 Cursor Behavior Model

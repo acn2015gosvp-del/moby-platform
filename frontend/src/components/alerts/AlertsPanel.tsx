@@ -11,12 +11,18 @@ interface AlertsPanelProps {
   alerts: Alert[]
   loading?: boolean
   onRefresh?: () => void
+  onDismissAlert?: (alertId: string) => void
 }
 
 type SortField = 'ts' | 'level' | 'message'
 type SortOrder = 'asc' | 'desc'
 
-export function AlertsPanel({ alerts, loading = false, onRefresh }: AlertsPanelProps) {
+export function AlertsPanel({
+  alerts,
+  loading = false,
+  onRefresh,
+  onDismissAlert,
+}: AlertsPanelProps) {
   const [searchQuery, setSearchQuery] = useState('')
   const [levelFilter, setLevelFilter] = useState<Alert['level'] | 'all'>('all')
   const [sortField, setSortField] = useState<SortField>('ts')
@@ -265,7 +271,7 @@ export function AlertsPanel({ alerts, loading = false, onRefresh }: AlertsPanelP
               {paginatedAlerts.map((alert) => (
                 <div
                   key={alert.id}
-                  className="p-6 hover:bg-gray-50 transition-colors"
+                  className="p-6 hover:bg-gray-50 transition-colors relative"
                 >
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
@@ -299,6 +305,30 @@ export function AlertsPanel({ alerts, loading = false, onRefresh }: AlertsPanelP
                         )}
                       </div>
                     </div>
+                    {/* 개별 삭제 버튼 */}
+                    {onDismissAlert && (
+                      <button
+                        onClick={() => onDismissAlert(alert.id)}
+                        className="ml-4 p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded transition-colors"
+                        title="알림 삭제"
+                        aria-label="알림 삭제"
+                      >
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          className="h-5 w-5"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M6 18L18 6M6 6l12 12"
+                          />
+                        </svg>
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}

@@ -11,12 +11,41 @@ import type { DeviceSummary } from '@/types/sensor'
 interface EquipmentCardProps {
   device: DeviceSummary
   onClick?: (device: DeviceSummary) => void
+  onRemove?: (deviceId: string) => void
 }
 
-const EquipmentCard: React.FC<EquipmentCardProps> = ({ device, onClick }) => {
+const EquipmentCard: React.FC<EquipmentCardProps> = ({ device, onClick, onRemove }) => {
   const navigate = useNavigate()
   const [isHovered, setIsHovered] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
+  const [isNewlyAdded, setIsNewlyAdded] = useState(false)
+  
+  const handleRemove = (e: React.MouseEvent) => {
+    e.stopPropagation() // 카드 클릭 이벤트 방지
+    if (onRemove && device.device_id) {
+      if (window.confirm(`"${device.name}" 설비를 삭제하시겠습니까?`)) {
+        onRemove(device.device_id)
+      }
+    }
+  }
+  
+  // 새로 추가된 카드인지 확인 (lastUpdated가 최근 5초 이내면 새로 추가된 것으로 간주)
+  React.useEffect(() => {
+    if (device.lastUpdated) {
+      const lastUpdated = new Date(device.lastUpdated).getTime()
+      const now = Date.now()
+      const diff = now - lastUpdated
+      
+      if (diff < 5000) { // 5초 이내
+        setIsNewlyAdded(true)
+        // 3초 후 애니메이션 제거
+        const timer = setTimeout(() => {
+          setIsNewlyAdded(false)
+        }, 3000)
+        return () => clearTimeout(timer)
+      }
+    }
+  }, [device.lastUpdated])
 
   const getStatusStyles = (status: DeviceSummary['status']) => {
     const styles = {
@@ -62,11 +91,13 @@ const EquipmentCard: React.FC<EquipmentCardProps> = ({ device, onClick }) => {
       return
     }
 
-    // onClick 콜백 호출 (부모 컴포넌트에서 추가 처리 가능)
-    onClick?.(device)
-
-    // 모니터링 페이지로 이동
-    navigate(`/monitoring/${device.device_id}`)
+    // onClick 콜백이 있으면 그것을 사용, 없으면 기본 동작
+    if (onClick) {
+      onClick(device)
+    } else {
+      // 기본 동작: 모니터링 페이지로 이동
+      navigate(`/monitoring/${device.device_id}`)
+    }
   }
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -83,6 +114,7 @@ const EquipmentCard: React.FC<EquipmentCardProps> = ({ device, onClick }) => {
       role="button"
       tabIndex={0}
       aria-label={`${device.name} 설비 대시보드 열기`}
+      data-device-id={device.device_id}
       onClick={handleCardClick}
       onKeyDown={handleKeyPress}
       onMouseEnter={() => setIsHovered(true)}
@@ -95,6 +127,7 @@ const EquipmentCard: React.FC<EquipmentCardProps> = ({ device, onClick }) => {
           : 'border-2 border-transparent hover:shadow-lg'
         }
         ${isLoading ? 'opacity-60 pointer-events-none' : ''}
+        ${isNewlyAdded ? 'animate-pulse border-2 border-green-400 shadow-lg' : ''}
         focus:outline-none focus:ring-4 focus:ring-blue-300
         active:scale-[0.98]
       `}
@@ -112,9 +145,36 @@ const EquipmentCard: React.FC<EquipmentCardProps> = ({ device, onClick }) => {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
           </svg>
         </div>
-        <span className={`px-3 py-1 rounded-full text-xs font-medium border ${statusStyle.badge}`}>
-          {device.status}
-        </span>
+        <div className="flex items-center gap-2">
+          <span className={`px-3 py-1 rounded-full text-xs font-medium border ${statusStyle.badge}`}>
+            {device.status}
+          </span>
+          {/* 삭제 버튼 (X) */}
+          {onRemove && (
+            <button
+              onClick={handleRemove}
+              onMouseEnter={(e) => e.stopPropagation()}
+              onMouseLeave={(e) => e.stopPropagation()}
+              className="w-6 h-6 flex items-center justify-center rounded-full bg-gray-200 hover:bg-red-500 text-gray-600 hover:text-white transition-all duration-200"
+              aria-label={`${device.name} 설비 삭제`}
+              title="설비 삭제"
+            >
+              <svg
+                className="w-4 h-4"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M6 18L18 6M6 6l12 12"
+                />
+              </svg>
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="mb-4">

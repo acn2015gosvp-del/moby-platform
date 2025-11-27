@@ -12,7 +12,8 @@
  * - 이름: conv1
  */
 export const GRAFANA_CONFIG = {
-  BASE_URL: import.meta.env.VITE_GRAFANA_URL || 'http://localhost:3000',
+  // Grafana 임베딩 주소를 192.168.80.229:8080으로 고정
+  BASE_URL: import.meta.env.VITE_GRAFANA_BASE_URL || 'http://192.168.80.229:8080',
   API_KEY: import.meta.env.VITE_GRAFANA_API_KEY || '',
   DEFAULT_ORG_ID: parseInt(import.meta.env.VITE_GRAFANA_ORG_ID || '1', 10),
   DEFAULT_DASHBOARD_UID: import.meta.env.VITE_GRAFANA_DASHBOARD_UID || 'adckqfq', // conv1 대시보드
@@ -63,23 +64,21 @@ export interface GrafanaDashboard {
 }
 
 /**
- * Grafana API를 사용하여 대시보드 정보 가져오기
+ * Grafana API를 사용하여 대시보드 정보 가져오기 (백엔드 프록시 사용)
  * @param dashboardUID - 대시보드 UID
  * @returns 대시보드 정보
  */
 export const getGrafanaDashboard = async (dashboardUID: string): Promise<GrafanaDashboard | null> => {
-  const { API_KEY, BASE_URL } = GRAFANA_CONFIG
-  
-  if (!API_KEY) {
-    console.warn('[Grafana] API 키가 설정되지 않았습니다. 환경 변수 VITE_GRAFANA_API_KEY를 확인하세요.')
-    return null
-  }
+  // 백엔드 프록시를 통해 Grafana API 호출 (CORS 문제 해결)
+  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://192.168.80.33:8000'
   
   try {
-    const url = buildGrafanaApiUrl(`/dashboards/uid/${dashboardUID}`)
+    const url = `${API_BASE_URL}/api/proxy-grafana/dashboard/${dashboardUID}`
     const response = await fetch(url, {
       method: 'GET',
-      headers: getGrafanaApiHeaders(),
+      headers: {
+        'Content-Type': 'application/json',
+      },
     })
     
     if (!response.ok) {
@@ -87,18 +86,23 @@ export const getGrafanaDashboard = async (dashboardUID: string): Promise<Grafana
         console.warn(`[Grafana] 대시보드를 찾을 수 없습니다: ${dashboardUID}`)
         return null
       }
-      throw new Error(`Grafana API 요청 실패: ${response.status} ${response.statusText}`)
+      const errorData = await response.json().catch(() => ({}))
+      throw new Error(errorData.message || `Grafana API 요청 실패: ${response.status} ${response.statusText}`)
     }
     
-    const data = await response.json()
-    const dashboard = data.dashboard
+    const result = await response.json()
+    
+    if (!result.success || !result.data) {
+      console.warn(`[Grafana] 대시보드 정보 조회 실패: ${result.message || '알 수 없는 오류'}`)
+      return null
+    }
     
     return {
-      uid: dashboard.uid,
-      title: dashboard.title,
-      url: dashboard.url || `/d/${dashboard.uid}`,
-      version: dashboard.version || 1,
-      tags: dashboard.tags || [],
+      uid: result.data.uid,
+      title: result.data.title,
+      url: result.data.url || `/d/${result.data.uid}`,
+      version: result.data.version || 1,
+      tags: result.data.tags || [],
     }
   } catch (error: any) {
     console.error('[Grafana] 대시보드 정보 가져오기 실패:', error)
@@ -126,8 +130,7 @@ export const buildGrafanaDashboardUrl = (
     orgId: DEFAULT_ORG_ID.toString(),
     from: range.from,
     to: range.to,
-    refresh: '30s',
-    kiosk: 'tv',
+    refresh: '5s', // 5초마다 자동 새로고침
   })
 
   // deviceId가 있으면 변수로 추가
@@ -135,30 +138,47 @@ export const buildGrafanaDashboardUrl = (
     params.append('var-device_id', deviceId)
   }
 
-  return `${baseUrl}/d/${dashboardUID}/view?${params.toString()}`
+  // kiosk 파라미터 추가 (값 없이)
+  params.append('kiosk', '')
+
+  const url = `${baseUrl}/d/${dashboardUID}/view?${params.toString()}`
+  
+  // 디버깅: kiosk 파라미터 확인
+  if (import.meta.env.DEV) {
+    console.log('[Grafana] 생성된 URL:', url)
+    console.log('[Grafana] kiosk 파라미터 포함 여부:', params.toString().includes('kiosk'))
+  }
+  
+  return url
 }
 
 /**
- * Grafana 서버 연결 확인
+ * Grafana 서버 연결 확인 (백엔드 프록시 사용)
  * @returns 서버가 응답하는지 여부
  */
 export const checkGrafanaConnection = async (): Promise<boolean> => {
-  const { BASE_URL } = GRAFANA_CONFIG
-  const baseUrl = BASE_URL.replace(/\/$/, '')
+  // 백엔드 프록시를 통해 Grafana 서버 상태 확인 (CORS 문제 해결)
+  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://192.168.80.33:8000'
   
   try {
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), 5000)
     
-    await fetch(`${baseUrl}/api/health`, {
+    const response = await fetch(`${API_BASE_URL}/api/proxy-grafana/health`, {
       method: 'GET',
       signal: controller.signal,
-      mode: 'no-cors',
     })
     
     clearTimeout(timeoutId)
-    return true
+    
+    if (!response.ok) {
+      return false
+    }
+    
+    const result = await response.json()
+    return result.success && result.data?.connected === true
   } catch (error) {
+    console.error('[Grafana] 연결 확인 실패:', error)
     return false
   }
 }

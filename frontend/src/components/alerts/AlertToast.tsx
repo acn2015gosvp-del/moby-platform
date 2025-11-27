@@ -37,9 +37,9 @@ export function AlertToast({ alert, onClose, duration = 5000 }: AlertToastProps)
     switch (alert.level) {
       case 'critical':
         return {
-          bg: 'bg-red-50',
-          border: 'border-red-300',
-          text: 'text-red-800',
+          bg: 'bg-red-100',
+          border: 'border-red-600',
+          text: 'text-red-900',
           icon: '🔴',
         }
       case 'warning':

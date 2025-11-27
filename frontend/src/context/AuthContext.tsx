@@ -32,19 +32,28 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         // 토큰이 있으면 API 클라이언트에 설정
         apiClient.defaults.headers.common['Authorization'] = `Bearer ${token}`
         
-        // 사용자 정보 재확인
-        try {
-          const currentUser = await authService.getCurrentUser()
-          setUser(currentUser)
-          authService.saveUser(currentUser)
-        } catch (error) {
-          // 토큰이 유효하지 않으면 로그아웃
-          authService.logout()
-          delete apiClient.defaults.headers.common['Authorization']
-        }
+        // 저장된 사용자 정보를 먼저 설정 (즉시 UI 표시)
+        setUser(storedUser)
+        setIsLoading(false)  // 즉시 로딩 완료로 표시하여 UI 블로킹 방지
+        
+        // 사용자 정보 재확인은 백그라운드에서 수행 (타임아웃 단축)
+        // 실패해도 UI는 이미 표시되었으므로 사용자 경험에 영향 없음
+        authService.getCurrentUser()
+          .then((currentUser) => {
+            setUser(currentUser)
+            authService.saveUser(currentUser)
+          })
+          .catch((error) => {
+            // 토큰이 유효하지 않으면 조용히 로그아웃 (사용자에게는 영향 없음)
+            console.warn('[AuthContext] 사용자 정보 재확인 실패:', error)
+            authService.logout()
+            setUser(null)
+            delete apiClient.defaults.headers.common['Authorization']
+          })
+      } else {
+        // 토큰이 없으면 즉시 로딩 완료
+        setIsLoading(false)
       }
-      
-      setIsLoading(false)
     }
 
     initAuth()

@@ -67,25 +67,65 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
         
     Returns:
         JWT 토큰 문자열
+        
+    Raises:
+        ValueError: SECRET_KEY가 설정되지 않았거나 유효하지 않은 경우
+        Exception: JWT 토큰 생성 중 기타 오류 발생 시
     """
-    to_encode = data.copy()
+    # SECRET_KEY 검증
+    if not settings.SECRET_KEY or not settings.SECRET_KEY.strip():
+        error_msg = "SECRET_KEY가 설정되지 않았습니다. .env 파일에 SECRET_KEY를 설정하세요."
+        logger.error(error_msg)
+        raise ValueError(error_msg)
     
-    if expires_delta:
-        expire = datetime.utcnow() + expires_delta
+    # SECRET_KEY 길이 검증 (최소 32자 권장)
+    if len(settings.SECRET_KEY) < 16:
+        logger.warning(f"SECRET_KEY가 너무 짧습니다 ({len(settings.SECRET_KEY)}자). 보안을 위해 최소 32자 이상을 권장합니다.")
+    
+    # ALGORITHM 검증
+    if not settings.ALGORITHM or not settings.ALGORITHM.strip():
+        error_msg = "ALGORITHM이 설정되지 않았습니다."
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+    
+    # ACCESS_TOKEN_EXPIRE_MINUTES 검증
+    if not hasattr(settings, 'ACCESS_TOKEN_EXPIRE_MINUTES') or settings.ACCESS_TOKEN_EXPIRE_MINUTES is None:
+        expire_minutes = 30  # 기본값
+        logger.warning(f"ACCESS_TOKEN_EXPIRE_MINUTES가 설정되지 않아 기본값 {expire_minutes}분을 사용합니다.")
     else:
-        expire = datetime.utcnow() + timedelta(
-            minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
+        expire_minutes = settings.ACCESS_TOKEN_EXPIRE_MINUTES
+        if expire_minutes <= 0:
+            logger.warning(f"ACCESS_TOKEN_EXPIRE_MINUTES가 유효하지 않습니다 ({expire_minutes}). 기본값 30분을 사용합니다.")
+            expire_minutes = 30
+    
+    try:
+        to_encode = data.copy()
+        
+        if expires_delta:
+            expire = datetime.utcnow() + expires_delta
+        else:
+            expire = datetime.utcnow() + timedelta(minutes=expire_minutes)
+        
+        to_encode.update({"exp": expire})
+        
+        # JWT 토큰 생성
+        encoded_jwt = jwt.encode(
+            to_encode,
+            settings.SECRET_KEY,
+            algorithm=settings.ALGORITHM
         )
-    
-    to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(
-        to_encode,
-        settings.SECRET_KEY,
-        algorithm=settings.ALGORITHM
-    )
-    
-    logger.debug(f"JWT 토큰 생성 완료. expires_at={expire}")
-    return encoded_jwt
+        
+        logger.debug(f"JWT 토큰 생성 완료. expires_at={expire}")
+        return encoded_jwt
+        
+    except JWTError as e:
+        error_msg = f"JWT 토큰 생성 실패: {str(e)}"
+        logger.error(error_msg, exc_info=True)
+        raise ValueError(error_msg) from e
+    except Exception as e:
+        error_msg = f"JWT 토큰 생성 중 예상치 못한 오류: {str(e)}"
+        logger.error(error_msg, exc_info=True)
+        raise ValueError(error_msg) from e
 
 
 def decode_access_token(token: str) -> Optional[dict]:

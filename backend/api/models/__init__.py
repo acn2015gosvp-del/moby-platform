@@ -4,6 +4,7 @@
 
 from .user import User
 from .alert import Alert
+from .alert_history import AlertHistory, CheckStatus
 
-__all__ = ["User", "Alert"]
+__all__ = ["User", "Alert", "AlertHistory", "CheckStatus"]
 

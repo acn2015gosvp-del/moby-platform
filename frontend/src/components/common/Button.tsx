@@ -32,6 +32,7 @@ function Button({
 
   return (
     <button
+      type={props.type || 'button'}
       className={`rounded-md font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 ${variantClasses[variant]} ${sizeClasses[size]} ${className}`}
       {...props}
     >

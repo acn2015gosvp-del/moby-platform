@@ -6,7 +6,7 @@ LLM 기반 주간/일일 보고서 생성을 제공합니다.
 
 from fastapi import APIRouter, HTTPException, Depends, status
 from typing import Dict, Any, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pydantic import BaseModel, Field
 
 from backend.api.core.responses import SuccessResponse, ErrorResponse
@@ -91,6 +91,9 @@ async def generate_report(
         # 기간 검증 (여러 날짜 형식 지원)
         def parse_datetime(date_str: str) -> datetime:
             """여러 날짜 형식을 지원하는 파서"""
+            if not date_str or not isinstance(date_str, str):
+                raise ValueError(f"날짜 문자열이 올바르지 않습니다: {date_str}")
+            
             # 형식 목록 (우선순위 순)
             formats = [
                 "%Y-%m-%d %H:%M:%S",  # YYYY-MM-DD HH:MM:SS
@@ -115,8 +118,17 @@ async def generate_report(
             
             raise ValueError(f"날짜 형식을 파싱할 수 없습니다: {date_str}")
         
-        start_dt = parse_datetime(request.period_start)
-        end_dt = parse_datetime(request.period_end)
+        logger.info(f"보고서 생성 요청 수신: period_start={request.period_start}, period_end={request.period_end}, equipment={request.equipment}")
+        
+        try:
+            start_dt = parse_datetime(request.period_start)
+            end_dt = parse_datetime(request.period_end)
+        except ValueError as ve:
+            logger.error(f"날짜 파싱 실패: {ve}", exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"날짜 형식이 올바르지 않습니다: {str(ve)}"
+            )
         
         if end_dt <= start_dt:
             raise HTTPException(
@@ -131,15 +143,28 @@ async def generate_report(
         logger.info(f"보고서 데이터 수집 시작. 기간: {request.period_start} ~ {request.period_end}")
         data_collection_start = time.time()
         
-        report_data = await _collect_report_data(
-            db=db,
-            period_start=request.period_start,
-            period_end=request.period_end,
-            equipment=request.equipment,
-            sensor_ids=request.sensor_ids,
-            include_mlp_anomalies=request.include_mlp_anomalies,
-            include_if_anomalies=request.include_if_anomalies
-        )
+        try:
+            report_data = await _collect_report_data(
+                db=db,
+                period_start=request.period_start,
+                period_end=request.period_end,
+                equipment=request.equipment,
+                sensor_ids=request.sensor_ids,
+                include_mlp_anomalies=request.include_mlp_anomalies,
+                include_if_anomalies=request.include_if_anomalies
+            )
+        except ValueError as ve:
+            logger.error(f"데이터 수집 실패 (날짜 형식 오류): {ve}", exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"보고 기간 형식이 올바르지 않습니다: {str(ve)}"
+            )
+        except Exception as e:
+            logger.exception(f"데이터 수집 중 예상치 못한 오류: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"데이터 수집 중 오류가 발생했습니다: {str(e)}"
+            )
         
         data_collection_time = time.time() - data_collection_start
         logger.info(f"✅ 데이터 수집 완료 (소요 시간: {data_collection_time:.2f}초)")
@@ -153,49 +178,87 @@ async def generate_report(
             llm_start_time = time.time()
             logger.info("LLM 보고서 생성 시작...")
             
-            generator = get_report_generator()
-            report_content = generator.generate_report(report_data)
+            # 보고서 생성기 초기화 (에러 처리 강화)
+            try:
+                generator = get_report_generator()
+            except ImportError as e:
+                logger.error(f"보고서 생성기 패키지 오류: {e}", exc_info=True)
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="보고서 생성 서비스를 사용할 수 없습니다. google-generativeai 패키지가 설치되지 않았습니다."
+                )
+            except ValueError as e:
+                error_msg = str(e)
+                logger.error(f"보고서 생성기 초기화 실패 (API 키 문제): {e}", exc_info=True)
+                
+                # API 키 정지 상태를 더 명확하게 처리
+                if "정지되었습니다" in error_msg or "CONSUMER_SUSPENDED" in error_msg or "has been suspended" in error_msg.lower():
+                    raise HTTPException(
+                        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                        detail=error_msg  # 이미 사용자 친화적인 메시지가 포함되어 있음
+                    )
+                
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail=f"보고서 생성 서비스를 사용할 수 없습니다. GEMINI_API_KEY를 확인하세요: {error_msg}"
+                )
+            except Exception as e:
+                logger.error(f"보고서 생성기 초기화 중 예상치 못한 오류: {e}", exc_info=True)
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"보고서 생성기 초기화 실패: {str(e)}"
+                )
+            
+            # 보고서 생성 (에러 처리 강화)
+            try:
+                report_content = generator.generate_report(report_data)
+                if not report_content or not report_content.strip():
+                    raise ValueError("보고서 생성기는 성공했지만 빈 내용이 반환되었습니다.")
+            except ValueError as e:
+                logger.error(f"보고서 생성 실패 (데이터 문제): {e}", exc_info=True)
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"보고서 생성 실패: {str(e)}"
+                )
+            except Exception as e:
+                logger.exception(f"보고서 생성 중 예상치 못한 오류: {e}")
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"보고서 생성 중 오류가 발생했습니다: {str(e)}"
+                )
             
             llm_time = time.time() - llm_start_time
             total_time = time.time() - total_start_time
             logger.info(f"✅ LLM 생성 완료 (소요 시간: {llm_time:.2f}초)")
             logger.info(f"📊 전체 보고서 생성 완료 (총 소요 시간: {total_time:.2f}초, 데이터 수집: {data_collection_time:.2f}초, LLM 생성: {llm_time:.2f}초)")
-        except ImportError as e:
-            logger.error(f"보고서 생성기 초기화 실패: {e}")
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="보고서 생성 서비스를 사용할 수 없습니다. GEMINI_API_KEY를 확인하세요."
+            
+            # 응답 생성
+            report_id = f"report_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            
+            response = ReportResponse(
+                report_id=report_id,
+                report_content=report_content,
+                metadata=report_data.get("metadata", {}),
+                generated_at=datetime.now().isoformat() + "Z"
             )
-        except ValueError as e:
-            logger.error(f"보고서 생성 실패: {e}")
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"보고서 생성 실패: {str(e)}"
+            
+            logger.info(f"보고서 생성 완료. report_id={report_id}")
+            
+            return SuccessResponse(
+                success=True,
+                data=response,
+                message="보고서가 성공적으로 생성되었습니다."
             )
+        except HTTPException:
+            # HTTPException은 그대로 전달
+            raise
         except Exception as e:
+            # 보고서 생성 중 예상치 못한 오류
             logger.exception(f"보고서 생성 중 예상치 못한 오류: {e}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"보고서 생성 중 오류가 발생했습니다: {str(e)}"
             )
-        
-        # 응답 생성
-        report_id = f"report_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-        
-        response = ReportResponse(
-            report_id=report_id,
-            report_content=report_content,
-            metadata=report_data.get("metadata", {}),
-            generated_at=datetime.now().isoformat() + "Z"
-        )
-        
-        logger.info(f"보고서 생성 완료. report_id={report_id}")
-        
-        return SuccessResponse(
-            success=True,
-            data=response,
-            message="보고서가 성공적으로 생성되었습니다."
-        )
         
     except HTTPException:
         raise
@@ -241,16 +304,23 @@ async def _collect_report_data(
     # 알람 데이터 수집 (성능 최적화: 제한된 수만 가져오기)
     # 기간 필터링을 위해 알람을 가져온 후 필터링
     # limit을 500으로 줄여서 데이터 수집 시간 단축
-    all_alerts = get_latest_alerts(
-        db=db,
-        limit=500,  # 1000 → 500으로 감소 (성능 개선)
-        sensor_id=None if not sensor_ids else sensor_ids[0] if len(sensor_ids) == 1 else None,
-        level=None
-    )
+    try:
+        all_alerts = get_latest_alerts(
+            db=db,
+            limit=500,  # 1000 → 500으로 감소 (성능 개선)
+            sensor_id=None if not sensor_ids else sensor_ids[0] if len(sensor_ids) == 1 else None,
+            level=None
+        )
+    except Exception as e:
+        logger.error(f"알람 데이터 조회 실패: {e}", exc_info=True)
+        # 알람 데이터 조회 실패 시 빈 리스트로 처리 (보고서는 생성 가능)
+        all_alerts = []
+        logger.warning("알람 데이터 조회 실패로 빈 리스트를 사용합니다. 보고서는 계속 생성됩니다.")
     
     # 기간 필터링 (parse_datetime 함수 재사용)
+    # timezone-aware datetime으로 통일하여 비교 오류 방지
     def parse_datetime_for_filter(date_str: str) -> datetime:
-        """여러 날짜 형식을 지원하는 파서 (필터링용)"""
+        """여러 날짜 형식을 지원하는 파서 (필터링용) - timezone-aware로 반환"""
         formats = [
             "%Y-%m-%d %H:%M:%S",  # YYYY-MM-DD HH:MM:SS
             "%Y-%m-%dT%H:%M:%S",  # YYYY-MM-DDTHH:MM:SS (ISO 형식)
@@ -260,13 +330,21 @@ async def _collect_report_data(
         
         for fmt in formats:
             try:
-                return datetime.strptime(date_str, fmt)
+                # timezone-naive datetime을 UTC timezone-aware로 변환
+                dt = datetime.strptime(date_str, fmt)
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                return dt
             except ValueError:
                 continue
         
         # ISO 형식으로 시도
         try:
-            return datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+            dt = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+            # 이미 timezone-aware이면 그대로 반환
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt
         except ValueError:
             pass
         
@@ -278,7 +356,14 @@ async def _collect_report_data(
     alerts = []
     for alert in all_alerts:
         try:
-            alert_ts = datetime.fromisoformat(alert.ts.replace('Z', '+00:00'))
+            # alert.ts를 timezone-aware datetime으로 변환
+            alert_ts_str = alert.ts.replace('Z', '+00:00') if 'Z' in alert.ts else alert.ts
+            alert_ts = datetime.fromisoformat(alert_ts_str)
+            # timezone 정보가 없으면 UTC로 설정
+            if alert_ts.tzinfo is None:
+                alert_ts = alert_ts.replace(tzinfo=timezone.utc)
+            
+            # 이제 모든 datetime이 timezone-aware이므로 비교 가능
             if start_dt <= alert_ts <= end_dt:
                 alerts.append({
                     "id": alert.alert_id,

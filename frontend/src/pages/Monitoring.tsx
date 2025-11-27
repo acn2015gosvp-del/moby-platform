@@ -7,8 +7,7 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import type { DeviceSummary, SensorStatusResponse } from '@/types/sensor'
-import { getSensorStatus } from '@/services/sensors/sensorService'
+import type { DeviceSummary } from '@/types/sensor'
 import {
   GRAFANA_CONFIG,
   buildGrafanaDashboardUrl,
@@ -16,14 +15,13 @@ import {
   checkGrafanaConnection,
   type GrafanaDashboard,
 } from '@/utils/grafana'
+import { useDeviceContext } from '@/context/DeviceContext'
 import Loading from '@/components/common/Loading'
 
 const Monitoring: React.FC = () => {
-  const { deviceId } = useParams<{ deviceId: string }>()
+  const { deviceId } = useParams<{ deviceId?: string }>()
   const navigate = useNavigate()
-  
-  const [devices, setDevices] = useState<DeviceSummary[]>([])
-  const [selectedDevice, setSelectedDevice] = useState<DeviceSummary | null>(null)
+  const { devices, selectedDevice, setSelectedDeviceId } = useDeviceContext()
   const [timeRange, setTimeRange] = useState<string>('1h')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -62,49 +60,21 @@ const Monitoring: React.FC = () => {
     )
   }, [selectedDevice, selectedTimeRange])
 
-  // 설비 목록 가져오기
+  // deviceId가 변경되면 해당 설비로 이동
   useEffect(() => {
-    const fetchDevices = async () => {
-      try {
-        setLoading(true)
-        setError(null)
-
-        const response = await getSensorStatus()
-        
-        if (response.success && response.data) {
-          const data = response.data as SensorStatusResponse
-          if (data.devices && data.devices.length > 0) {
-            setDevices(data.devices)
-            
-            // URL 파라미터로 전달된 deviceId로 설비 선택
-            if (deviceId) {
-              const device = data.devices.find(d => d.device_id === deviceId)
-              if (device) {
-                setSelectedDevice(device)
-              } else {
-                setSelectedDevice(data.devices[0])
-              }
-            } else {
-              setSelectedDevice(data.devices[0])
-            }
-          } else {
-            setDevices([])
-            setSelectedDevice(null)
-          }
-        } else {
-          setDevices([])
-          setSelectedDevice(null)
-        }
-      } catch (err: any) {
-        console.error('설비 목록 로딩 실패:', err)
-        setError(err.response?.data?.message || '설비 목록을 불러오는데 실패했습니다.')
-      } finally {
-        setLoading(false)
-      }
+    if (deviceId && deviceId !== selectedDevice?.device_id) {
+      setSelectedDeviceId(deviceId)
     }
+  }, [deviceId, selectedDevice, setSelectedDeviceId])
 
-    fetchDevices()
-  }, [deviceId])
+  // selectedDevice가 없고 deviceId가 있으면 로딩 상태
+  useEffect(() => {
+    if (deviceId && !selectedDevice) {
+      setLoading(true)
+    } else {
+      setLoading(false)
+    }
+  }, [deviceId, selectedDevice])
 
   // Grafana 서버 연결 확인
   useEffect(() => {
@@ -135,11 +105,7 @@ const Monitoring: React.FC = () => {
         return
       }
 
-      if (!GRAFANA_CONFIG.API_KEY) {
-        setIframeError('Grafana API 키가 설정되지 않았습니다.\n\n환경 변수 VITE_GRAFANA_API_KEY를 확인하세요.')
-        setIframeLoading(false)
-        return
-      }
+      // API 키는 백엔드에서 관리하므로 프론트엔드에서는 확인하지 않음
 
       try {
         const dashboard = await getGrafanaDashboard(GRAFANA_CONFIG.DEFAULT_DASHBOARD_UID)
@@ -162,10 +128,9 @@ const Monitoring: React.FC = () => {
     fetchDashboardInfo()
   }, [])
 
-  // 설비 변경 시 URL 업데이트
-  const handleDeviceChange = (device: DeviceSummary) => {
-    setSelectedDevice(device)
-    navigate(`/monitoring/${device.device_id}`, { replace: true })
+  // 설비 변경 핸들러 - DeviceContext를 통해 URL 업데이트
+  const handleDeviceChange = (newDeviceId: string) => {
+    setSelectedDeviceId(newDeviceId)
     setRefreshKey(prev => prev + 1) // iframe 강제 새로고침
   }
 
@@ -348,72 +313,6 @@ const Monitoring: React.FC = () => {
         )}
       </div>
 
-      {/* 필터 및 액션 버튼 */}
-      <div className="mb-6 flex flex-wrap items-center gap-4">
-        {/* 설비 선택 드롭다운 */}
-        <div className="flex-1 min-w-[200px]">
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            설비 선택
-          </label>
-          <select
-            value={selectedDevice?.device_id || ''}
-            onChange={(e) => {
-              const device = devices.find(d => d.device_id === e.target.value)
-              if (device) handleDeviceChange(device)
-            }}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
-          >
-            {devices.map((device) => (
-              <option key={device.device_id} value={device.device_id}>
-                {device.name}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {/* 시간 범위 선택 드롭다운 */}
-        <div className="flex-1 min-w-[150px]">
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            시간 범위
-          </label>
-          <select
-            value={timeRange}
-            onChange={(e) => {
-              setTimeRange(e.target.value)
-              setRefreshKey(prev => prev + 1)
-            }}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
-          >
-            {timeRangeOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {/* 액션 버튼 */}
-        <div className="flex gap-2 items-end">
-          <button
-            onClick={handleRefresh}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
-          >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-            </svg>
-            새로고침
-          </button>
-          <button
-            onClick={handleExport}
-            className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors flex items-center gap-2"
-          >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-            </svg>
-            내보내기
-          </button>
-        </div>
-      </div>
 
       {/* Grafana 연결 상태 표시 */}
       {grafanaConnected !== null && (

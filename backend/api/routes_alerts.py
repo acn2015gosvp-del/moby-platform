@@ -5,7 +5,7 @@
 """
 
 from fastapi import APIRouter, status, Depends, BackgroundTasks
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from datetime import datetime
 
 from .services.schemas.alert_schema import AlertResponse
@@ -13,6 +13,10 @@ from .services.schemas.alert_request_schema import AlertRequest
 from .services.alert_engine import process_alert, AlertPayloadModel
 from .services.notifier_stub import send_alert
 from .services.alert_storage import save_alert, get_latest_alerts
+from .services.alert_history_service import (
+    get_unchecked_alerts,
+    check_alert as check_alert_history
+)
 from .core.responses import SuccessResponse, ErrorResponse
 from .core.api_exceptions import BadRequestError, InternalServerError, NotFoundError
 from .core.permissions import require_permissions
@@ -281,6 +285,8 @@ async def get_latest_alerts_endpoint(
         InternalServerError: 조회 중 내부 오류
     """
     try:
+        logger.info(f"[get_latest_alerts_endpoint] 요청 수신: limit={limit}, sensor_id={sensor_id}, level={level}, user_id={current_user.id if current_user else 'None'}")
+        
         # limit 검증
         if limit < 1 or limit > 100:
             raise BadRequestError(
@@ -295,43 +301,111 @@ async def get_latest_alerts_endpoint(
                 field="level"
             )
         
+        # 데이터베이스 연결 확인
+        try:
+            from sqlalchemy import text
+            db.execute(text("SELECT 1"))
+            logger.debug("[get_latest_alerts_endpoint] DB 연결 확인 완료")
+        except Exception as db_error:
+            logger.error(f"[get_latest_alerts_endpoint] DB 연결 실패: {type(db_error).__name__}: {db_error}", exc_info=True)
+            raise InternalServerError(
+                message=f"데이터베이스 연결 실패: {type(db_error).__name__}: {str(db_error)}"
+            )
+        
         # 데이터베이스에서 최신 알림 조회
-        alerts = get_latest_alerts(
-            db=db,
-            limit=limit,
-            sensor_id=sensor_id,
-            level=level
-        )
+        try:
+            alerts = get_latest_alerts(
+                db=db,
+                limit=limit,
+                sensor_id=sensor_id,
+                level=level
+            )
+            logger.info(f"[get_latest_alerts_endpoint] 조회된 알림 개수: {len(alerts)}")
+        except Exception as query_error:
+            logger.error(f"[get_latest_alerts_endpoint] 알림 조회 실패: {type(query_error).__name__}: {query_error}", exc_info=True)
+            raise InternalServerError(
+                message=f"알림 조회 중 오류 발생: {type(query_error).__name__}: {str(query_error)}"
+            )
         
         # Alert 모델을 AlertPayloadModel로 변환
         alert_payloads = []
-        for alert in alerts:
-            # details를 AlertDetailsModel로 복원
-            from backend.api.services.alert_engine import AlertDetailsModel
-            
-            details = None
-            if alert.details:
-                details = AlertDetailsModel(**alert.details)
-            
-            payload = AlertPayloadModel(
-                id=alert.alert_id,
-                level=alert.level,
-                message=alert.message,
-                llm_summary=alert.llm_summary,
-                sensor_id=alert.sensor_id,
-                source=alert.source,
-                ts=alert.ts,
-                details=details or AlertDetailsModel(
-                    vector=[],
-                    norm=0.0,
-                    threshold=None,
-                    warning_threshold=None,
-                    critical_threshold=None,
-                    severity="normal",
-                    meta={}
+        from backend.api.services.alert_engine import AlertDetailsModel
+        
+        for idx, alert in enumerate(alerts):
+            try:
+                # alert 객체 검증
+                if not alert:
+                    logger.warning(f"[get_latest_alerts_endpoint] 알림 {idx+1}이 None입니다. 건너뜁니다.")
+                    continue
+                
+                logger.debug(f"[get_latest_alerts_endpoint] 알림 {idx+1}/{len(alerts)} 변환 시작: alert_id={getattr(alert, 'alert_id', 'unknown')}")
+                
+                # alert 필드 검증
+                alert_id = getattr(alert, 'alert_id', None)
+                if not alert_id:
+                    logger.warning(f"[get_latest_alerts_endpoint] alert_id가 None입니다. 건너뜁니다.")
+                    continue
+                
+                # details를 AlertDetailsModel로 복원
+                details = None
+                alert_details = getattr(alert, 'details', None)
+                if alert_details:
+                    try:
+                        # alert_details가 dict인 경우
+                        if isinstance(alert_details, dict):
+                            # 필수 필드 확인 및 기본값 설정
+                            details_dict = {
+                                "vector": alert_details.get("vector", []),
+                                "norm": alert_details.get("norm", 0.0),
+                                "threshold": alert_details.get("threshold"),
+                                "warning_threshold": alert_details.get("warning_threshold"),
+                                "critical_threshold": alert_details.get("critical_threshold"),
+                                "severity": alert_details.get("severity", "normal"),
+                                "meta": alert_details.get("meta", {})
+                            }
+                            details = AlertDetailsModel(**details_dict)
+                        else:
+                            # 이미 AlertDetailsModel 인스턴스인 경우
+                            details = alert_details
+                    except Exception as e:
+                        logger.warning(
+                            f"[get_latest_alerts_endpoint] alert {alert.alert_id}의 details 파싱 실패: {e}. "
+                            f"기본 details 사용."
+                        )
+                        details = None
+                
+                # 기본 details 생성
+                if not details:
+                    details = AlertDetailsModel(
+                        vector=[],
+                        norm=0.0,
+                        threshold=None,
+                        warning_threshold=None,
+                        critical_threshold=None,
+                        severity="normal",
+                        meta={}
+                    )
+                
+                # AlertPayloadModel 생성 (안전한 필드 접근)
+                payload = AlertPayloadModel(
+                    id=str(alert_id),  # 문자열로 변환
+                    level=getattr(alert, 'level', 'info') or "info",
+                    message=getattr(alert, 'message', 'No message') or "No message",
+                    llm_summary=getattr(alert, 'llm_summary', None),
+                    sensor_id=getattr(alert, 'sensor_id', 'unknown') or "unknown",
+                    source=getattr(alert, 'source', 'unknown') or "unknown",
+                    ts=getattr(alert, 'ts', None) or datetime.utcnow().isoformat() + "Z",
+                    details=details
                 )
-            )
-            alert_payloads.append(payload)
+                alert_payloads.append(payload)
+                logger.debug(f"[get_latest_alerts_endpoint] 알림 {idx+1} 변환 완료: {alert_id}")
+            except Exception as e:
+                logger.error(
+                    f"[get_latest_alerts_endpoint] 알림 {alert.alert_id if hasattr(alert, 'alert_id') else 'unknown'} 변환 실패: {e}",
+                    exc_info=True
+                )
+                # 개별 알림 변환 실패 시 건너뛰고 계속 진행
+                continue
         
         logger.info(
             f"Retrieved {len(alert_payloads)} latest alerts. "
@@ -346,8 +420,181 @@ async def get_latest_alerts_endpoint(
         
     except BadRequestError:
         raise
+    except InternalServerError:
+        raise
     except Exception as e:
-        logger.exception(f"Unexpected error while retrieving latest alerts: {e}")
+        logger.exception(
+            f"[get_latest_alerts_endpoint] 예상치 못한 오류 발생: {type(e).__name__}: {e}",
+            exc_info=True
+        )
         raise InternalServerError(
-            message="An error occurred while retrieving latest alerts"
+            message=f"알림 조회 중 오류 발생: {type(e).__name__}: {str(e)}"
+        )
+
+
+@router.get(
+    "/unchecked",
+    response_model=SuccessResponse[List[Dict[str, Any]]],
+    summary="미확인 알림 목록 조회",
+    description="""
+    미확인 알림 목록을 조회합니다.
+    
+    **응답:**
+    - `200 OK`: 미확인 알림 목록 반환
+    - `500 Internal Server Error`: 서버 내부 오류
+    
+    **예시:**
+    - `/alerts/unchecked` - 미확인 알림 목록 조회
+    - `/alerts/unchecked?limit=20` - 최대 20개만 조회
+    """,
+    responses={
+        200: {
+            "description": "미확인 알림 목록 조회 성공",
+            "model": SuccessResponse[List[Dict[str, Any]]]
+        },
+        500: {
+            "description": "서버 내부 오류",
+            "model": ErrorResponse
+        }
+    }
+)
+async def get_unchecked_alerts_endpoint(
+    limit: Optional[int] = None,
+    current_user: User = Depends(require_permissions(Permission.ALERT_READ)),
+    db: Session = Depends(get_db)
+) -> SuccessResponse[List[Dict[str, Any]]]:
+    """
+    미확인 알림 목록을 조회합니다.
+    
+    Args:
+        limit: 조회할 최대 개수 (없으면 전체)
+        db: 데이터베이스 세션
+        
+    Returns:
+        SuccessResponse[List[Dict[str, Any]]]: 미확인 알림 목록
+    """
+    try:
+        # 미확인 알림 조회
+        alerts = get_unchecked_alerts(db, limit=limit)
+        
+        # 딕셔너리로 변환
+        alert_list = []
+        for alert in alerts:
+            alert_dict = {
+                "id": alert.id,
+                "device_id": alert.device_id,
+                "occurred_at": alert.occurred_at.isoformat() if alert.occurred_at else None,
+                "error_code": alert.error_code,
+                "message": alert.message,
+                "raw_value": alert.raw_value,
+                "check_status": alert.check_status.value,
+                "checked_by": alert.checked_by,
+                "created_at": alert.created_at.isoformat() if alert.created_at else None,
+            }
+            alert_list.append(alert_dict)
+        
+        logger.info(
+            f"Retrieved {len(alert_list)} unchecked alerts (limit={limit})"
+        )
+        
+        return SuccessResponse(
+            success=True,
+            data=alert_list,
+            message=f"Retrieved {len(alert_list)} unchecked alerts"
+        )
+        
+    except Exception as e:
+        logger.exception(f"Unexpected error while retrieving unchecked alerts: {e}")
+        raise InternalServerError(
+            message="An error occurred while retrieving unchecked alerts"
+        )
+
+
+@router.post(
+    "/check",
+    response_model=SuccessResponse[Dict[str, Any]],
+    status_code=status.HTTP_200_OK,
+    summary="알림 확인 처리",
+    description="""
+    알림을 확인 처리합니다 (DB 상태 업데이트).
+    
+    **요청 본문:**
+    - `alert_id`: 확인할 알림 ID (필수)
+    
+    **응답:**
+    - `200 OK`: 확인 처리 성공
+    - `404 Not Found`: 알림을 찾을 수 없음
+    - `500 Internal Server Error`: 서버 내부 오류
+    """,
+    responses={
+        200: {
+            "description": "알림 확인 처리 성공",
+            "model": SuccessResponse[Dict[str, Any]]
+        },
+        404: {
+            "description": "알림을 찾을 수 없음",
+            "model": ErrorResponse
+        },
+        500: {
+            "description": "서버 내부 오류",
+            "model": ErrorResponse
+        }
+    }
+)
+async def check_alert_endpoint(
+    alert_id: int,
+    current_user: User = Depends(require_permissions(Permission.ALERT_WRITE)),
+    db: Session = Depends(get_db)
+) -> SuccessResponse[Dict[str, Any]]:
+    """
+    알림을 확인 처리합니다.
+    
+    Args:
+        alert_id: 확인할 알림 ID
+        current_user: 현재 사용자 (확인자로 사용)
+        db: 데이터베이스 세션
+        
+    Returns:
+        SuccessResponse[Dict[str, Any]]: 업데이트된 알림 정보
+    """
+    try:
+        # 알림 확인 처리
+        checked_by = current_user.email or f"user_{current_user.id}"
+        alert = check_alert_history(db, alert_id, checked_by)
+        
+        if not alert:
+            raise NotFoundError(
+                message=f"Alert with ID {alert_id} not found",
+                field="alert_id"
+            )
+        
+        # 응답 데이터 구성
+        alert_data = {
+            "id": alert.id,
+            "device_id": alert.device_id,
+            "occurred_at": alert.occurred_at.isoformat() if alert.occurred_at else None,
+            "error_code": alert.error_code,
+            "message": alert.message,
+            "raw_value": alert.raw_value,
+            "check_status": alert.check_status.value,
+            "checked_by": alert.checked_by,
+            "created_at": alert.created_at.isoformat() if alert.created_at else None,
+        }
+        
+        logger.info(
+            f"Alert checked. ID: {alert_id}, Checked by: {checked_by}"
+        )
+        
+        return SuccessResponse(
+            success=True,
+            data=alert_data,
+            message=f"Alert {alert_id} checked successfully"
+        )
+        
+    except NotFoundError:
+        raise
+    except Exception as e:
+        logger.exception(f"Unexpected error while checking alert: {e}")
+        raise InternalServerError(
+            message="An error occurred while checking alert"
         )

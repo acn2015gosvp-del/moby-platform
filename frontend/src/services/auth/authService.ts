@@ -42,7 +42,10 @@ export const login = async (data: LoginRequest): Promise<Token> => {
  */
 export const getCurrentUser = async (): Promise<User> => {
   const response = await apiClient.get<SuccessResponse<User>>(
-    AUTH_ENDPOINTS.ME
+    AUTH_ENDPOINTS.ME,
+    {
+      timeout: 3000, // 3초 타임아웃 (초기 로딩 최적화)
+    }
   )
   return response.data.data
 }

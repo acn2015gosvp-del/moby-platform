@@ -84,7 +84,7 @@ class AlertDetailsModel(BaseModel):
     warning_threshold: Optional[float]
     critical_threshold: Optional[float]
     severity: str
-    meta: Dict[str, Any]
+    meta: Dict[str, Any] = Field(default_factory=dict)
 
 
 class AlertPayloadModel(BaseModel):

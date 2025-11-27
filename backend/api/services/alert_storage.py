@@ -105,7 +105,12 @@ def get_latest_alerts(
             query = query.filter(Alert.level == level)
         
         # 최신순 정렬 및 제한
-        alerts = query.order_by(desc(Alert.created_at)).limit(limit).all()
+        # created_at이 None인 경우를 대비하여 id로도 정렬
+        try:
+            alerts = query.order_by(desc(Alert.created_at), desc(Alert.id)).limit(limit).all()
+        except Exception as order_error:
+            logger.warning(f"created_at 정렬 실패, id로만 정렬 시도: {order_error}")
+            alerts = query.order_by(desc(Alert.id)).limit(limit).all()
         
         logger.debug(
             f"Retrieved {len(alerts)} latest alerts. "

@@ -199,9 +199,22 @@ async def login(
                 message="비활성화된 계정입니다."
             )
         
-        # JWT 토큰 생성
+        # JWT 토큰 생성 (에러 처리 강화)
         token_start = time.time()
-        access_token = create_access_token(data={"sub": user.email})
+        try:
+            access_token = create_access_token(data={"sub": user.email})
+        except ValueError as ve:
+            # SECRET_KEY 또는 JWT 생성 관련 오류
+            logger.error(f"JWT 토큰 생성 실패: {ve}", exc_info=True)
+            raise UnauthorizedError(
+                message="인증 토큰 생성 중 오류가 발생했습니다. 관리자에게 문의하세요."
+            )
+        except Exception as token_error:
+            # 기타 JWT 생성 오류
+            logger.error(f"JWT 토큰 생성 중 예상치 못한 오류: {token_error}", exc_info=True)
+            raise UnauthorizedError(
+                message="인증 토큰 생성 중 오류가 발생했습니다. 관리자에게 문의하세요."
+            )
         token_time = time.time() - token_start
         
         total_time = time.time() - total_start
@@ -221,12 +234,17 @@ async def login(
         )
         
     except UnauthorizedError:
+        # UnauthorizedError는 그대로 전달 (401 상태 코드)
+        logger.debug(f"로그인 실패 (UnauthorizedError): {user_data.email}")
+        raise
+    except HTTPException:
+        # HTTPException도 그대로 전달 (FastAPI가 처리)
         raise
     except Exception as e:
         # 상세한 에러 정보 로깅
         import traceback
         error_traceback = traceback.format_exc()
-        logger.exception(f"로그인 중 예상치 못한 오류: {e}")
+        logger.exception(f"❌ 로그인 처리 중 예상치 못한 오류 발생: {e}")
         logger.error(f"로그인 실패 상세 정보:\n{error_traceback}")
         
         # SECRET_KEY 관련 에러인지 확인
@@ -251,6 +269,7 @@ async def login(
             )
         
         # 기타 예상치 못한 에러는 500 에러로 변환하지 않고 401로 반환
+        # 이렇게 하면 프론트엔드에서 일관된 에러 처리가 가능함
         raise UnauthorizedError(
             message="로그인 중 오류가 발생했습니다. 관리자에게 문의하세요."
         )

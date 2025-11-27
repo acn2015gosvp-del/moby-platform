@@ -3,19 +3,39 @@
  * WebSocket을 통한 실시간 알림 수신 및 AlertsPanel 컴포넌트 사용
  */
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useParams, Navigate } from 'react-router-dom'
 import { getLatestAlerts } from '@/services/alerts/alertService'
 import type { Alert } from '@/types/alert'
 import { AlertsPanel } from '@/components/alerts/AlertsPanel'
 import { AlertToastContainer } from '@/components/alerts/AlertToast'
 import { useWebSocketContext } from '@/context/WebSocketContext'
+import { useDeviceContext } from '@/context/DeviceContext'
+import { getDismissedAlerts, dismissAlert } from '@/utils/localStorage'
 
 function Alerts() {
+  const { deviceId } = useParams<{ deviceId?: string }>()
+  const { selectedDevice } = useDeviceContext()
+
+  // deviceId가 없으면 설비 목록으로 리다이렉트
+  if (!deviceId) {
+    return <Navigate to="/devices" replace />
+  }
   const [alerts, setAlerts] = useState<Alert[]>([])
   const [toastAlerts, setToastAlerts] = useState<Alert[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const { isConnected } = useWebSocketContext()
+
+  // 삭제된 알림 ID 목록 (localStorage에서 로드)
+  const [dismissedAlertIds, setDismissedAlertIds] = useState<Set<string>>(() =>
+    getDismissedAlerts()
+  )
+
+  // 삭제되지 않은 알림만 필터링
+  const visibleAlerts = useMemo(() => {
+    return alerts.filter((alert) => !dismissedAlertIds.has(alert.id))
+  }, [alerts, dismissedAlertIds])
 
   const fetchAlerts = useCallback(async () => {
     try {
@@ -74,6 +94,16 @@ function Alerts() {
     setToastAlerts((prev) => prev.filter((alert) => alert.id !== id))
   }, [])
 
+  // 개별 알림 삭제 핸들러
+  const handleDismissAlert = useCallback((alertId: string) => {
+    dismissAlert(alertId)
+    setDismissedAlertIds((prev) => {
+      const next = new Set(prev)
+      next.add(alertId)
+      return next
+    })
+  }, [])
+
   return (
     <div>
       <div className="flex justify-between items-center mb-6">
@@ -101,7 +131,12 @@ function Alerts() {
       />
 
       {/* 알림 패널 */}
-      <AlertsPanel alerts={alerts} loading={loading} onRefresh={fetchAlerts} />
+      <AlertsPanel
+        alerts={visibleAlerts}
+        loading={loading}
+        onRefresh={fetchAlerts}
+        onDismissAlert={handleDismissAlert}
+      />
     </div>
   )
 }

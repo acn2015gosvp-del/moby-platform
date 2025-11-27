@@ -320,6 +320,19 @@ class Settings(BaseSettings):
     # Gemini API 설정 (보고서 생성 및 알림 요약용)
     GEMINI_API_KEY: str = ""
     
+    # 메신저 알림 설정 (선택사항)
+    SLACK_WEBHOOK_URL: Optional[str] = None  # Slack Webhook URL
+    TELEGRAM_BOT_TOKEN: Optional[str] = None  # Telegram Bot Token
+    TELEGRAM_CHAT_ID: Optional[str] = None  # Telegram Chat ID
+    
+    # 이메일 알림 설정 (선택사항)
+    SMTP_HOST: Optional[str] = None  # SMTP 서버 주소 (예: smtp.gmail.com)
+    SMTP_PORT: int = 587  # SMTP 포트 (기본값: 587)
+    SMTP_USER: Optional[str] = None  # SMTP 인증 사용자명
+    SMTP_PASSWORD: Optional[str] = None  # SMTP 인증 비밀번호
+    SMTP_FROM_EMAIL: Optional[str] = None  # 발신자 이메일
+    SMTP_TO_EMAILS: Optional[str] = None  # 수신자 이메일 (쉼표로 구분, 예: "admin@example.com,ops@example.com")
+    
     # 인증 설정
     SECRET_KEY: str = "your-secret-key-change-in-production"
     ALGORITHM: str = "HS256"

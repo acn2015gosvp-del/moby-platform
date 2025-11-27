@@ -125,6 +125,13 @@ class MqttClientManager:
             except Exception as e:
                 logger.error(f"❌ Failed to subscribe to sensor topics: {e}", exc_info=True)
             
+            # Edge AI 알림 토픽 구독 (새로운 토픽: factory/inference/results/#)
+            try:
+                client.subscribe("factory/inference/results/#", qos=1)
+                logger.info("✅ Subscribed to Edge AI alert topic: factory/inference/results/#")
+            except Exception as e:
+                logger.error(f"❌ Failed to subscribe to Edge AI alert topic: {e}", exc_info=True)
+            
             # 연결 성공 시 큐에 있는 메시지 처리 시작
             self._notify_queue_processor()
         else:
@@ -182,7 +189,8 @@ class MqttClientManager:
         """
         MQTT 메시지 수신 콜백
         
-        센서 데이터를 받아서 InfluxDB에 저장합니다.
+        센서 데이터를 받아서 InfluxDB에 저장하고,
+        Edge AI 알림을 처리합니다.
         """
         try:
             topic = msg.topic
@@ -191,8 +199,13 @@ class MqttClientManager:
             
             logger.debug(f"📥 MQTT message received. Topic: {topic}")
             
+            # Edge AI 알림 토픽인 경우 처리
+            # Edge AI 알림 토픽 처리 (factory/inference/results/#)
+            if topic.startswith("factory/inference/results/"):
+                from backend.api.services.mqtt_ai_subscriber import process_ai_alert_mqtt
+                process_ai_alert_mqtt(topic, msg.payload)
             # 센서 데이터 토픽인 경우 InfluxDB에 저장
-            if topic.startswith("sensors/") and topic.endswith("/data"):
+            elif topic.startswith("sensors/") and topic.endswith("/data"):
                 self._process_sensor_data(topic, payload)
             else:
                 logger.debug(f"Unhandled topic: {topic}")

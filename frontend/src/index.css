@@ -20,3 +20,41 @@ body {
   min-width: 320px;
   min-height: 100vh;
 }
+
+/* 화면 점멸 효과 (critical 알림용) */
+@keyframes critical-flash {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(220, 38, 38, 0);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(220, 38, 38, 0.5);
+  }
+}
+
+.critical-flash {
+  animation: critical-flash 1s ease-in-out infinite;
+}
+
+/* 티커 스크롤 애니메이션 */
+@keyframes scroll {
+  0% {
+    transform: translateX(100%);
+  }
+  100% {
+    transform: translateX(-100%);
+  }
+}
+
+.animate-scroll {
+  animation: scroll 20s linear infinite;
+}
+
+/* 프로그레스 바 애니메이션 */
+@keyframes progress {
+  0% {
+    width: 100%;
+  }
+  100% {
+    width: 0%;
+  }
+}
