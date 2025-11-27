@@ -14,7 +14,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api'
  */
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 10000, // 10초로 감소 (초기 로딩 최적화)
+  timeout: 8000, // 8초로 감소 (초기 로딩 최적화)
   headers: {
     'Content-Type': 'application/json',
   },

@@ -244,10 +244,10 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
     let timer: ReturnType<typeof setTimeout> | null = null
     
     if (enabled) {
-      // 초기 렌더링 후 약간의 지연을 두고 WebSocket 연결 (UI 블로킹 방지)
+      // 초기 렌더링 후 최소 지연으로 WebSocket 연결 (UI 블로킹 방지)
       timer = setTimeout(() => {
         connect()
-      }, 300) // 300ms로 단축 (더 빠른 WebSocket 연결)
+      }, 100) // 100ms로 단축 (더 빠른 WebSocket 연결)
     } else {
       disconnect()
     }

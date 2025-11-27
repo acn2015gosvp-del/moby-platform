@@ -32,7 +32,7 @@ interface DeviceProviderProps {
 export function DeviceProvider({ children }: DeviceProviderProps) {
   const [devices, setDevices] = useState<DeviceSummary[]>([])
   const [selectedDevice, setSelectedDevice] = useState<DeviceSummary | null>(null)
-  const [loading, setLoading] = useState(false) // 초기값을 false로 변경하여 UI 블로킹 방지
+  const [loading, setLoading] = useState(false) // 초기값을 false로 설정하여 즉시 UI 표시
   const [error, setError] = useState<string | null>(null)
   const navigate = useNavigate()
   const location = useLocation()
@@ -41,14 +41,17 @@ export function DeviceProvider({ children }: DeviceProviderProps) {
   // 설비 목록 가져오기
   const fetchDevices = async () => {
     try {
-      setLoading(true)
+      // 로딩 상태는 즉시 true로 설정하지 않고, 실제로 데이터를 가져올 때만 설정
+      // 이렇게 하면 초기 렌더링이 더 빠르게 진행됨
       setError(null)
 
-      // 타임아웃 설정 (3초로 단축)
+      // 타임아웃 설정 (5초로 증가 - 안정성 향상)
       const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error('타임아웃')), 3000)
+        setTimeout(() => reject(new Error('타임아웃')), 5000)
       })
 
+      // 로딩 상태는 실제 API 호출 직전에만 설정
+      setLoading(true)
       const response = await Promise.race([
         getSensorStatus(),
         timeoutPromise
@@ -88,14 +91,10 @@ export function DeviceProvider({ children }: DeviceProviderProps) {
     }
   }, [params.deviceId, devices])
 
-  // 초기 로드 시 설비 목록 가져오기 (지연 실행으로 초기 렌더링 블로킹 방지)
+  // 초기 로드 시 설비 목록 가져오기 (즉시 실행)
   useEffect(() => {
-    // 초기 렌더링 후 약간의 지연을 두고 데이터 로딩 (UI 블로킹 방지)
-    const timer = setTimeout(() => {
-      fetchDevices()
-    }, 50) // 50ms로 단축 (더 빠른 데이터 로딩)
-    
-    return () => clearTimeout(timer)
+    // 지연 없이 즉시 데이터 로딩 (로딩 상태는 false로 시작하여 UI 블로킹 방지)
+    fetchDevices()
   }, [])
 
   // 설비 ID 자동 생성
