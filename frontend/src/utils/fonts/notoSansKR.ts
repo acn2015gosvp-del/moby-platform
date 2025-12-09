@@ -48,8 +48,15 @@ export async function loadFontAsBase64(fontUrl: string): Promise<string> {
  * @param fontData Base64 인코딩된 폰트 데이터 (Regular)
  * @param boldFontData Base64 인코딩된 폰트 데이터 (Bold, 선택사항)
  */
+// jsPDF 타입 정의
+interface JSPDFDocument {
+  addFileToVFS: (filename: string, fontData: string) => void
+  addFont: (filename: string, fontName: string, fontStyle: string) => void
+  [key: string]: unknown
+}
+
 export function registerNotoSansKR(
-  doc: any, 
+  doc: JSPDFDocument, 
   fontData: string, 
   boldFontData?: string
 ): void {

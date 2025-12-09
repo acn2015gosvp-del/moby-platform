@@ -22,9 +22,7 @@ function Dashboard() {
   const { theme } = useTheme()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  // iframeLoaded는 현재 사용되지 않지만 향후 사용을 위해 유지
-  const [_iframeLoaded, setIframeLoaded] = useState(false)
-  void setIframeLoaded
+  // iframeLoaded는 현재 사용되지 않음
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const iframeRef = useRef<HTMLIFrameElement | null>(null)
 

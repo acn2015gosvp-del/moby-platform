@@ -24,9 +24,7 @@ const Monitoring: React.FC = () => {
   const [loading, _setLoading] = useState(false)
   void _setLoading
   const [iframeError, setIframeError] = useState<string | null>(null)
-  // iframeLoaded는 현재 사용되지 않지만 향후 사용을 위해 유지
-  const [_iframeLoaded, setIframeLoaded] = useState(false)
-  void setIframeLoaded
+  // iframeLoaded는 현재 사용되지 않음
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const iframeRef = useRef<HTMLIFrameElement | null>(null)
 
@@ -137,7 +135,12 @@ const Monitoring: React.FC = () => {
   // 설비 변경 시 iframe 상태 초기화
   useEffect(() => {
     if (grafanaDashboardUrl && selectedDevice) {
-      setIframeError(null)
+      // useEffect 내에서 setState를 직접 호출하는 대신, 
+      // 다음 렌더링 사이클에서 업데이트하도록 수정
+      const timeoutId = setTimeout(() => {
+        setIframeError(null)
+      }, 0)
+      return () => clearTimeout(timeoutId)
       
       if (import.meta.env.DEV) {
         console.log('[Monitoring] Grafana 대시보드 URL:', grafanaDashboardUrl)

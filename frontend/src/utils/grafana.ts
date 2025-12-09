@@ -104,7 +104,7 @@ export const getGrafanaDashboard = async (dashboardUID: string): Promise<Grafana
       version: result.data.version || 1,
       tags: result.data.tags || [],
     }
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('[Grafana] 대시보드 정보 가져오기 실패:', error)
     throw error
   }
