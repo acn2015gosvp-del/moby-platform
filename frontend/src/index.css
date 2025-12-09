@@ -1,0 +1,132 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Roboto+Mono:wght@400;500;600&display=swap');
+@import "tailwindcss";
+
+@theme {
+  /* Primary Colors */
+  --color-primary: #FFC93C;
+  --color-primary-yellow: #FFC93C;
+  
+  /* Background Colors (default: dark) */
+  --color-background-main: #1E1E1E;
+  --color-background-surface: #2C2C2C;
+  
+  /* Border Colors (default: dark) */
+  --color-border: #3A3A3A;
+  
+  /* Secondary Colors */
+  --color-secondary: #007AFF;
+  --color-secondary-blue: #007AFF;
+  --color-secondary-tech-blue: #007AFF;
+  
+  /* Status Colors */
+  --color-success: #32D296;
+  --color-warning: #FFB347;
+  --color-danger: #E63946;
+  
+  /* Text Colors (default: dark) */
+  --color-text-primary: #FFFFFF;
+  --color-text-secondary: #B0B0B0;
+  
+  /* Font Families */
+  --font-family-sans: 'Inter', sans-serif;
+  --font-family-mono: 'Roboto Mono', monospace;
+  
+  /* Border Radius */
+  --radius-default: 12px;
+}
+
+:root {
+  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+}
+
+/* 라이트 테마 토큰 오버라이드 */
+:root[data-theme='light'] {
+  --color-background-main: #F5F5F7;
+  --color-background-surface: #FFFFFF;
+  --color-border: #D0D0D5;
+  --color-text-primary: #111827;
+  --color-text-secondary: #4B5563;
+}
+
+/* CSS 호환성 개선: 웹킷 및 표준 속성 모두 사용 */
+@layer base {
+  html,
+  :host {
+    -webkit-text-size-adjust: 100%; /* Safari, 구형 Chrome */
+    text-size-adjust: 100%; /* 표준 (Chrome 54+, Edge 79+) */
+  }
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background-color: #ffffff; /* 전체 배경을 항상 흰색으로 */
+  color: var(--color-text-primary);
+  font-family: 'Inter', sans-serif;
+}
+
+/* 화면 빨간색 효과 (critical 알림용) - 화면 전체가 빨갛게 변함 */
+@keyframes critical-red-screen {
+  0%, 100% {
+    background-color: rgba(220, 38, 38, 0.15);
+  }
+  50% {
+    background-color: rgba(220, 38, 38, 0.25);
+  }
+}
+
+.critical-flash {
+  animation: critical-red-screen 1s ease-in-out infinite;
+  transition: background-color 0.3s ease-in-out;
+}
+
+/* Critical 알림 오버레이 (화면 전체를 덮는 빨간색 효과) */
+@keyframes critical-overlay {
+  0%, 100% {
+    opacity: 0.2;
+    backdrop-filter: blur(0px);
+  }
+  50% {
+    opacity: 0.35;
+    backdrop-filter: blur(1px);
+  }
+}
+
+.critical-overlay {
+  background: linear-gradient(
+    135deg,
+    rgba(220, 38, 38, 0.25) 0%,
+    rgba(239, 68, 68, 0.2) 50%,
+    rgba(220, 38, 38, 0.25) 100%
+  );
+  animation: critical-overlay 1s ease-in-out infinite;
+  z-index: 9999;
+}
+
+/* 티커 스크롤 애니메이션 */
+@keyframes scroll {
+  0% {
+    transform: translateX(100%);
+  }
+  100% {
+    transform: translateX(-100%);
+  }
+}
+
+.animate-scroll {
+  animation: scroll 20s linear infinite;
+}
+
+/* 프로그레스 바 애니메이션 */
+@keyframes progress {
+  0% {
+    width: 100%;
+  }
+  100% {
+    width: 0%;
+  }
+}

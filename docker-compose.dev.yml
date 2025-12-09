@@ -1,0 +1,110 @@
+# 개발 환경용 Docker Compose 설정
+# 프로덕션과 달리 볼륨 마운트를 사용하여 코드 변경이 즉시 반영됩니다.
+
+services:
+  # Backend API 서비스 (개발 모드)
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: moby-backend-dev
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=dev
+      - DEBUG=true
+      - LOG_LEVEL=DEBUG
+    env_file:
+      - .env
+    volumes:
+      - ./backend:/app/backend  # 코드 변경 즉시 반영
+      - ./logs:/app/logs
+      - ./moby.db:/app/moby.db
+    command: uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
+    depends_on:
+      - mqtt
+      - influxdb
+    networks:
+      - moby-network
+    restart: unless-stopped
+
+  # MQTT Broker (개발용)
+  mqtt:
+    image: eclipse-mosquitto:2.0
+    container_name: moby-mqtt-dev
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    volumes:
+      - ./docker/mosquitto/config:/mosquitto/config
+      - ./docker/mosquitto/data:/mosquitto/data
+      - ./docker/mosquitto/log:/mosquitto/log
+    networks:
+      - moby-network
+    restart: unless-stopped
+
+  # InfluxDB (개발용)
+  influxdb:
+    image: influxdb:2.7
+    container_name: moby-influxdb-dev
+    ports:
+      - "8086:8086"
+    environment:
+      - DOCKER_INFLUXDB_INIT_MODE=setup
+      - DOCKER_INFLUXDB_INIT_USERNAME=admin
+      - DOCKER_INFLUXDB_INIT_PASSWORD=adminpassword
+      - DOCKER_INFLUXDB_INIT_ORG=WISE
+      - DOCKER_INFLUXDB_INIT_BUCKET=moby-data
+      - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=${INFLUX_TOKEN:-dev-token-12345}
+    volumes:
+      - influxdb-dev-data:/var/lib/influxdb2
+      - influxdb-dev-config:/etc/influxdb2
+    networks:
+      - moby-network
+    restart: unless-stopped
+
+  # Grafana (개발용)
+  grafana:
+    image: grafana/grafana:latest
+    container_name: moby-grafana-dev
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana-dev-data:/var/lib/grafana
+    networks:
+      - moby-network
+    restart: unless-stopped
+    depends_on:
+      - influxdb
+
+  # Frontend (개발 모드 - 핫 리로드)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    container_name: moby-frontend-dev
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_URL=http://localhost:8000
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    networks:
+      - moby-network
+    restart: unless-stopped
+    depends_on:
+      - backend
+
+volumes:
+  influxdb-dev-data:
+  influxdb-dev-config:
+  grafana-dev-data:
+
+networks:
+  moby-network:
+    driver: bridge
+
