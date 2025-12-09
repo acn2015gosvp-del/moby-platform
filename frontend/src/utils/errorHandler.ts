@@ -11,14 +11,27 @@
  * @param defaultMessage - 기본 에러 메시지
  * @returns 사용자 친화적인 에러 메시지 문자열
  */
-export const extractErrorMessage = (err: any, defaultMessage: string = '오류가 발생했습니다.'): string => {
+interface AxiosErrorResponse {
+  response?: {
+    data?: {
+      error?: { message?: string; code?: string; field?: string }
+      detail?: string | Array<{ msg?: string; loc?: (string | number)[] }> | Record<string, unknown>
+      message?: string
+    }
+  }
+  message?: string
+}
+
+export const extractErrorMessage = (err: unknown, defaultMessage: string = '오류가 발생했습니다.'): string => {
   if (!err) {
     return defaultMessage
   }
 
+  const errObj = err as AxiosErrorResponse
+  
   // Axios 에러 응답이 있는 경우
-  if (err.response?.data) {
-    const data = err.response.data
+  if (errObj.response?.data) {
+    const data = errObj.response.data
 
     // ErrorResponse 형식: { success: false, error: { message: "...", code: "...", field: "..." } }
     if (data.error?.message) {
@@ -28,7 +41,7 @@ export const extractErrorMessage = (err: any, defaultMessage: string = '오류�
     // Pydantic 검증 에러 (배열): { detail: [{ type, loc, msg, input, ctx }, ...] }
     if (Array.isArray(data.detail)) {
       return data.detail
-        .map((e: any) => {
+        .map((e: { msg?: string; loc?: (string | number)[] }) => {
           // msg 필드가 있으면 사용
           if (e.msg) {
             const field = e.loc && e.loc.length > 1 ? e.loc[e.loc.length - 1] : ''
@@ -57,8 +70,8 @@ export const extractErrorMessage = (err: any, defaultMessage: string = '오류�
   }
 
   // 일반 에러 메시지
-  if (err.message) {
-    return err.message
+  if (errObj.message) {
+    return errObj.message
   }
 
   return defaultMessage

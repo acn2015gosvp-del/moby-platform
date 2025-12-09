@@ -20,8 +20,9 @@ function Sensors() {
       if (response.success && response.data) {
         setSensorStatus(response.data)
       }
-    } catch (err: any) {
-      setError(err.response?.data?.message || '센서 상태를 불러오는데 실패했습니다.')
+    } catch (err: unknown) {
+      const errObj = err as { response?: { data?: { message?: string } } }
+      setError(errObj.response?.data?.message || '센서 상태를 불러오는데 실패했습니다.')
       console.error('Failed to fetch sensor status:', err)
     } finally {
       setLoading(false)

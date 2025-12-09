@@ -58,7 +58,7 @@ const Register: React.FC = () => {
         password: formData.password,
       })
       navigate('/')
-    } catch (err: any) {
+    } catch (err: unknown) {
       const errorMessage = extractErrorMessage(
         err,
         '회원가입에 실패했습니다. 입력 정보를 확인해주세요.'

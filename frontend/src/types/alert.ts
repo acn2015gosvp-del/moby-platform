@@ -23,7 +23,7 @@ export interface AlertDetails {
   warning_threshold?: number
   critical_threshold?: number
   severity: string
-  meta?: Record<string, any>
+  meta?: Record<string, unknown>
 }
 
 export interface AlertRequest {
@@ -34,6 +34,6 @@ export interface AlertRequest {
   sensor_id?: string
   enable_llm_summary?: boolean
   message?: string
-  meta?: Record<string, any>
+  meta?: Record<string, unknown>
 }
 

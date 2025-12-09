@@ -41,13 +41,18 @@ function Alerts() {
         setError('알림 데이터를 불러올 수 없습니다.')
       }
     } catch (err: unknown) {
-      const errObj = err instanceof Error ? err : (err as { message?: string; code?: string; response?: unknown; config?: unknown })
-      const errorMessage = errObj.message || (errObj as { response?: { data?: { message?: string } } })?.response?.data?.message || '알림을 불러오는데 실패했습니다.'
+      const errObj = err as { 
+        message?: string
+        code?: string
+        response?: { data?: { message?: string } }
+        config?: unknown
+      }
+      const errorMessage = errObj.message || errObj.response?.data?.message || '알림을 불러오는데 실패했습니다.'
       setError(errorMessage)
       console.error('Failed to fetch alerts:', err)
       console.error('Error details:', {
         message: errObj.message,
-        code: (errObj as { code?: string }).code,
+        code: errObj.code,
         response: errObj.response,
         config: errObj.config,
       })

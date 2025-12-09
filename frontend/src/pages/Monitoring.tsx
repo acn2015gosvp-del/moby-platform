@@ -24,24 +24,25 @@ const Monitoring: React.FC = () => {
   const [loading, _setLoading] = useState(false)
   void _setLoading
   const [iframeError, setIframeError] = useState<string | null>(null)
-  const [iframeLoaded, setIframeLoaded] = useState(false)
+  // iframeLoaded는 현재 사용되지 않지만 향후 사용을 위해 유지
+  const [_iframeLoaded, setIframeLoaded] = useState(false)
+  void setIframeLoaded
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const iframeRef = useRef<HTMLIFrameElement | null>(null)
 
-  // 시간 범위 옵션
-  const timeRangeOptions = [
-    { value: '1h', label: '최근 1시간', from: 'now-1h', to: 'now' },
-    { value: '6h', label: '최근 6시간', from: 'now-6h', to: 'now' },
-    { value: '24h', label: '최근 24시간', from: 'now-24h', to: 'now' },
-    { value: '7d', label: '최근 7일', from: 'now-7d', to: 'now' },
-    { value: '30d', label: '최근 30일', from: 'now-30d', to: 'now' },
-  ]
-
   // 선택된 시간 범위에 해당하는 from/to 값
   const selectedTimeRange = useMemo(() => {
+    // 시간 범위 옵션을 useMemo 내부로 이동하여 의존성 문제 해결
+    const timeRangeOptions = [
+      { value: '1h', label: '최근 1시간', from: 'now-1h', to: 'now' },
+      { value: '6h', label: '최근 6시간', from: 'now-6h', to: 'now' },
+      { value: '24h', label: '최근 24시간', from: 'now-24h', to: 'now' },
+      { value: '7d', label: '최근 7일', from: 'now-7d', to: 'now' },
+      { value: '30d', label: '최근 30일', from: 'now-30d', to: 'now' },
+    ]
     const option = timeRangeOptions.find(opt => opt.value === timeRange)
     return option ? { from: option.from, to: option.to } : { from: 'now-6h', to: 'now' }
-  }, [timeRange, timeRangeOptions])
+  }, [timeRange])
 
   // Grafana 대시보드 URL 생성 (API 기반)
   const grafanaDashboardUrl = useMemo(() => {

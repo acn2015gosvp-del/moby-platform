@@ -210,7 +210,15 @@ export default function Reports() {
       // 더 자세한 에러 메시지 추출
       let errorMessage = '보고서 생성 중 오류가 발생했습니다.';
       
-      const errObj = err as { message?: string; response?: { data?: unknown; status?: number }; config?: unknown }
+      const errObj = err as { 
+        message?: string
+        response?: { 
+          data?: unknown
+          status?: number
+          headers?: Record<string, string>
+        }
+        config?: unknown
+      }
       console.error('[Reports] 보고서 생성 오류 상세:', {
         message: errObj.message,
         response: errObj.response,
@@ -229,7 +237,11 @@ export default function Reports() {
       }
       
       if (errObj.response?.data) {
-        const errorData = errObj.response.data;
+        const errorData = errObj.response.data as {
+          error?: { message?: string; code?: string }
+          detail?: string | Array<unknown> | Record<string, unknown>
+          message?: string
+        }
         console.log('[Reports] 에러 응답 데이터 (파싱):', errorData);
         
         // ErrorResponse 형식인 경우 (success: false, error: {code, message})
@@ -257,7 +269,7 @@ export default function Reports() {
         } 
         // 객체 응답 (전체 출력)
         else {
-          errorMessage = `서버 오류 (${err.response.status}): ${JSON.stringify(errorData, null, 2)}`;
+          errorMessage = `서버 오류 (${errObj.response?.status || 'unknown'}): ${JSON.stringify(errorData, null, 2)}`;
         }
       } 
       // 응답이 없지만 상태 코드가 있는 경우
@@ -265,7 +277,7 @@ export default function Reports() {
         errorMessage = `서버 오류 (${errObj.response.status}): ${errObj.message || '알 수 없는 오류'}`;
       }
       // 네트워크 오류
-      else if ((errObj as { request?: unknown }).request) {
+      else if ((err as { request?: unknown }).request) {
         errorMessage = '서버에 연결할 수 없습니다. 백엔드 서버가 실행 중인지 확인하세요.';
       }
       // 기타 오류

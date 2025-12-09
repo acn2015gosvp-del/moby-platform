@@ -159,7 +159,7 @@ function Dashboard() {
       
       // 이전 타임아웃이 있으면 취소
       if (timeoutRef.current !== null) {
-        clearTimeout(timeoutRef.current)
+        clearTimeout(timeoutRef.current as unknown as number)
         timeoutRef.current = null
       }
     }

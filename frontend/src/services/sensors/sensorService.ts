@@ -30,7 +30,7 @@ export const getSensorStatus = async (): Promise<SuccessResponse<SensorStatus | 
   // 백엔드에서 devices 필드가 없는 경우를 대비한 임시 목 데이터
   const data = response.data
   if (data.success && data.data) {
-    const statusData = data.data as any
+    const statusData = data.data as unknown as { devices?: Array<{ device_id: string; [key: string]: unknown }>; [key: string]: unknown }
     if (!statusData.devices || statusData.devices.length === 0) {
       // 임시 목 데이터 (백엔드 수정 전)
       return {

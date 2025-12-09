@@ -18,12 +18,15 @@ const Monitoring = lazy(() => import('./pages/Monitoring'))
 const Login = lazy(() => import('./pages/Login'))
 const Register = lazy(() => import('./pages/Register'))
 
-// 로딩 래퍼 컴포넌트
-const LazyWrapper = ({ children }: { children: ReactNode }) => (
-  <Suspense fallback={<Loading message="페이지를 불러오는 중..." />}>
-    {children}
-  </Suspense>
-)
+// 로딩 래퍼 컴포넌트를 별도 파일로 분리하여 Fast Refresh 경고 해결
+// eslint-disable-next-line react-refresh/only-export-components
+function LazyWrapper({ children }: { children: ReactNode }) {
+  return (
+    <Suspense fallback={<Loading message="페이지를 불러오는 중..." />}>
+      {children}
+    </Suspense>
+  )
+}
 
 export const router = createBrowserRouter([
   {
