@@ -59,16 +59,29 @@ class TestInfluxDBManager:
     def influx_manager(self, mock_influx_client):
         """InfluxDBManager 인스턴스 생성"""
         manager = InfluxDBManager()
-        return manager
+        try:
+            yield manager
+        finally:
+            # 테스트 종료 시 백그라운드 스레드 안전하게 종료
+            try:
+                manager.close()
+            except Exception:
+                pass
     
     def test_init(self, mock_influx_client):
         """InfluxDBManager 초기화 테스트"""
         manager = InfluxDBManager()
-        
-        assert manager.buffer is not None
-        assert manager.buffer_size == 100
-        assert manager.flush_interval == 5.0
-        assert manager.flush_thread is not None
+        try:
+            assert manager.buffer is not None
+            assert manager.buffer_size == 100
+            assert manager.flush_interval == 5.0
+            assert manager.flush_thread is not None
+        finally:
+            # 테스트 종료 시 백그라운드 스레드 안전하게 종료
+            try:
+                manager.close()
+            except Exception:
+                pass
     
     def test_write_point(self, influx_manager, mock_influx_client):
         """write_point 메서드 테스트"""
@@ -201,8 +214,8 @@ class TestInfluxDBManager:
 class TestQuerySensorStatus:
     """query_sensor_status 함수 테스트"""
     
-    @patch('backend.api.services.influx_client.influx_manager')
-    def test_query_sensor_status_success(self, mock_manager):
+    @patch('backend.api.services.influx_client._get_influx_manager')
+    def test_query_sensor_status_success(self, mock_get_manager):
         """센서 상태 조회 성공 테스트"""
         # 모킹된 결과
         mock_result = {
@@ -211,7 +224,9 @@ class TestQuerySensorStatus:
             "inactive_count": 1,
             "devices": ["sensor_001", "sensor_002"]
         }
+        mock_manager = MagicMock()
         mock_manager.query_sensor_status.return_value = mock_result
+        mock_get_manager.return_value = mock_manager
         
         result = query_sensor_status(bucket="test_bucket", inactive_threshold_minutes=10)
         
@@ -222,10 +237,12 @@ class TestQuerySensorStatus:
         assert call_args[0] == "test_bucket"
         assert call_args[1] == 10
     
-    @patch('backend.api.services.influx_client.influx_manager')
-    def test_query_sensor_status_error(self, mock_manager):
+    @patch('backend.api.services.influx_client._get_influx_manager')
+    def test_query_sensor_status_error(self, mock_get_manager):
         """센서 상태 조회 실패 테스트"""
+        mock_manager = MagicMock()
         mock_manager.query_sensor_status.side_effect = Exception("Query failed")
+        mock_get_manager.return_value = mock_manager
         
         # 에러가 발생해도 None을 반환하거나 예외를 발생시킬 수 있음
         # 실제 구현에 따라 테스트 수정 필요
