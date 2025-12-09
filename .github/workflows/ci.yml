@@ -56,6 +56,8 @@ jobs:
           INFLUX_ORG: test-org
           MQTT_HOST: localhost
           MQTT_PORT: 1883
+          CI: "true"
+          DISABLE_RATE_LIMIT: "true"
         run: |
           cd backend
           pytest tests/ -v --cov=backend --cov-report=xml --cov-report=term

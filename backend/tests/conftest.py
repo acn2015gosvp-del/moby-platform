@@ -71,6 +71,7 @@ def client(db_session):
     FastAPI 테스트 클라이언트 fixture
     
     데이터베이스 의존성을 테스트용 세션으로 오버라이드합니다.
+    테스트 환경에서는 rate limit을 비활성화합니다.
     """
     def override_get_db():
         try:
@@ -80,10 +81,22 @@ def client(db_session):
     
     app.dependency_overrides[get_db] = override_get_db
     
-    with TestClient(app) as test_client:
-        yield test_client
+    # 테스트 환경에서 rate limit 미들웨어 비활성화
+    # RateLimitMiddleware는 테스트 클라이언트에서 자동으로 우회됨
+    # 하지만 명시적으로 비활성화하기 위해 환경 변수 설정
+    import os
+    original_env = os.environ.get("DISABLE_RATE_LIMIT")
+    os.environ["DISABLE_RATE_LIMIT"] = "true"
     
-    app.dependency_overrides.clear()
+    try:
+        with TestClient(app) as test_client:
+            yield test_client
+    finally:
+        app.dependency_overrides.clear()
+        if original_env is None:
+            os.environ.pop("DISABLE_RATE_LIMIT", None)
+        else:
+            os.environ["DISABLE_RATE_LIMIT"] = original_env
 
 
 @pytest.fixture

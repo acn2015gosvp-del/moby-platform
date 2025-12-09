@@ -140,21 +140,24 @@ class TestReportDataService:
         mock_query_api = report_service.influx_client.query_api
         mock_query_api.query.return_value = []  # 빈 결과
         
-        with patch.object(report_service, '_query_sensor_statistics', return_value=None):
-            result = report_service._fetch_sensor_stats(
-                start_time=start_time,
-                end_time=end_time,
-                equipment_id="test_equipment",
-                alarms=[]
-            )
-            
-            # 더미 데이터가 생성되었는지 확인
-            assert result is not None
-            assert isinstance(result, dict)
+        # InfluxDB 쿼리 결과가 없는 경우 모킹
+        mock_query_api = report_service.influx_client.query_api
+        mock_query_api.query.return_value = []  # 빈 결과
+        
+        result = report_service._fetch_sensor_stats(
+            start_time=start_time,
+            end_time=end_time,
+            equipment_id="test_equipment",
+            alarms=[]
+        )
+        
+        # 기본 데이터가 생성되었는지 확인
+        assert result is not None
+        assert isinstance(result, dict)
     
     def test_generate_dummy_data(self, report_service):
         """더미 데이터 생성 함수 테스트"""
-        dummy_stats = report_service._generate_dummy_sensor_stats()
+        dummy_stats = report_service._get_default_sensor_stats()
         
         assert "temperature" in dummy_stats
         assert "humidity" in dummy_stats

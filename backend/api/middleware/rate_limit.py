@@ -149,6 +149,11 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self.rate_limiter = get_rate_limiter()
 
     async def dispatch(self, request: Request, call_next):
+        # 테스트 환경에서 rate limit 비활성화
+        import os
+        if os.getenv("DISABLE_RATE_LIMIT") == "true":
+            return await call_next(request)
+        
         # Health check 및 인증 엔드포인트는 제외 (성능 최적화)
         path = request.url.path
         if (path.startswith("/health") or 

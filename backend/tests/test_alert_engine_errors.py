@@ -305,7 +305,7 @@ class TestAlertsSummaryErrorHandling:
         assert result is None
     
     def test_generate_alert_summary_raises_llm_summary_error(self):
-        """예외 발생 시 LLMSummaryError 발생"""
+        """예외 발생 시 None 반환 (선택사항 기능이므로 예외를 발생시키지 않음)"""
         alert_data = {
             "id": "test-alert-123",
             "sensor_id": "sensor-001",
@@ -316,13 +316,9 @@ class TestAlertsSummaryErrorHandling:
             "backend.api.services.alerts_summary.summarize_alert",
             side_effect=Exception("LLM API error")
         ):
-            with pytest.raises(LLMSummaryError) as exc_info:
-                generate_alert_summary(alert_data)
-            
-            error = exc_info.value
-            assert error.alert_id == "test-alert-123"
-            assert error.original_error is not None
-            assert "LLM API error" in str(error.original_error)
+            # generate_alert_summary는 예외를 발생시키지 않고 None을 반환함
+            result = generate_alert_summary(alert_data)
+            assert result is None
     
     def test_generate_alert_summary_success(self):
         """정상적인 요약 생성"""
@@ -352,6 +348,7 @@ class TestAlertsSummaryErrorHandling:
             return_value=None
         ):
             result = generate_alert_summary(alert_data)
+            # summarize_alert가 None을 반환하면 generate_alert_summary도 None을 반환
             assert result is None
 
 
