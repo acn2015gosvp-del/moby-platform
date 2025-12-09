@@ -1186,14 +1186,16 @@ class ReportDataService:
                 "min": 0.0,
                 "max": 0.0,
                 "std": 0.0,
-                "p95": 0.0
+                "p95": 0.0,
+                "threshold_violations": 0.0
             },
             "humidity": {
                 "mean": 0.0,
                 "min": 0.0,
                 "max": 0.0,
                 "std": 0.0,
-                "p95": 0.0
+                "p95": 0.0,
+                "threshold_violations": 0.0
             },
             "vibration": {
                 "x": {"mean": 0.0, "peak": 0.0, "rms": 0.0},
@@ -1205,7 +1207,8 @@ class ReportDataService:
                 "min": 0.0,
                 "max": 0.0,
                 "std": 0.0,
-                "p95": 0.0
+                "p95": 0.0,
+                "threshold_violations": 0.0
             },
             "acceleration": {
                 "x": {"mean": 0.0, "min": 0.0, "max": 0.0, "std": 0.0, "p95": 0.0},
@@ -1222,7 +1225,8 @@ class ReportDataService:
                 "min": 0.0,
                 "max": 0.0,
                 "std": 0.0,
-                "p95": 0.0
+                "p95": 0.0,
+                "threshold_violations": 0.0
             }
         }
     

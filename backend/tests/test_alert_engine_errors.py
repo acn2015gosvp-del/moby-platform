@@ -343,10 +343,18 @@ class TestAlertsSummaryErrorHandling:
             "sensor_id": "sensor-001",
         }
         
+        # 캐시를 mock하여 캐시에서 값을 가져오지 않도록 함
         with patch(
+            "backend.api.services.alerts_summary.get_cache"
+        ) as mock_get_cache, patch(
             "backend.api.services.alerts_summary.summarize_alert",
             return_value=None
         ):
+            # 캐시 mock 설정: get()이 None을 반환하도록
+            mock_cache = MagicMock()
+            mock_cache.get.return_value = None
+            mock_get_cache.return_value = mock_cache
+            
             result = generate_alert_summary(alert_data)
             # summarize_alert가 None을 반환하면 generate_alert_summary도 None을 반환
             assert result is None
