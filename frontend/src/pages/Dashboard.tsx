@@ -84,7 +84,6 @@ function Dashboard() {
       timeoutRef.current = null
     }
     
-    setIframeLoaded(true)
     setError(null)
     setLoading(false)
     
@@ -147,7 +146,6 @@ function Dashboard() {
       const timeoutId = setTimeout(() => {
         setError(null)
         setLoading(false)
-        setIframeLoaded(false)
       }, 0)
       return () => clearTimeout(timeoutId)
       

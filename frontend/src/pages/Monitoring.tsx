@@ -79,7 +79,6 @@ const Monitoring: React.FC = () => {
       timeoutRef.current = null
     }
     
-    setIframeLoaded(true)
     setIframeError(null)
     
     if (import.meta.env.DEV) {
@@ -147,13 +146,10 @@ const Monitoring: React.FC = () => {
       }
       
       // 이전 타임아웃이 있으면 취소
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current)
+      if (timeoutRef.current !== null) {
+        clearTimeout(timeoutRef.current as unknown as number)
         timeoutRef.current = null
       }
-      
-      // iframe 로드 상태 초기화
-      setIframeLoaded(false)
     }
   }, [selectedDevice, timeRange, grafanaDashboardUrl])
 
