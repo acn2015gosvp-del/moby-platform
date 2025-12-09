@@ -52,11 +52,12 @@ export function OptimizedImage({
       { rootMargin: '50px' }
     )
 
-    observer.observe(imgRef.current)
+    const currentImg = imgRef.current
+    observer.observe(currentImg)
 
     return () => {
-      if (imgRef.current) {
-        observer.unobserve(imgRef.current)
+      if (currentImg) {
+        observer.unobserve(currentImg)
       }
     }
   }, [lazy])

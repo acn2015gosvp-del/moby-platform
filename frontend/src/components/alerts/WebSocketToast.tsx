@@ -37,11 +37,11 @@ export function WebSocketToast() {
     console.log('[WebSocketToast] 구독자 등록 시작...')
 
     // WebSocket 메시지 구독 (연결 상태와 관계없이 등록)
-    const unsubscribe = subscribe((alert: any) => {
+    const unsubscribe = subscribe((alert: WebSocketAlert | unknown) => {
       console.log('[WebSocketToast] ✅ 구독 콜백 호출됨! 알림 수신:', alert)
       console.log('[WebSocketToast] 알림 수신:', alert)
       try {
-        const wsAlert = alert as WebSocketAlert
+        const wsAlert = (alert as WebSocketAlert)
 
         // CONNECTED 메시지는 무시 (연결 확인용)
         // type이 'CRITICAL' | 'WARNING' | 'NOTICE' | 'RESOLVED' | undefined이므로
@@ -227,6 +227,7 @@ export function WebSocketToast() {
       console.log('[WebSocketToast] 구독 해제 중...')
       unsubscribe()
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [subscribe]) // isConnected를 dependency에서 제거하여 구독이 항상 유지되도록 함
 
   return (

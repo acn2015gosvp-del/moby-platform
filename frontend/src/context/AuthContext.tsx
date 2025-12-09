@@ -32,7 +32,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   })
   
   // 즉시 false로 설정하여 로딩 화면 방지
-  const [isLoading, _setIsLoading] = useState(false)
+  const [isLoading] = useState(false)
 
   // 초기화: 사용자 정보 재확인 (백그라운드에서만)
   useEffect(() => {
@@ -72,31 +72,23 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   // 로그인
   const handleLogin = async (data: LoginRequest) => {
-    try {
-      const token = await authService.login(data)
-      authService.saveToken(token.access_token)
-      
-      // API 클라이언트에 토큰 설정
-      apiClient.defaults.headers.common['Authorization'] = `Bearer ${token.access_token}`
-      
-      // 사용자 정보 조회
-      const currentUser = await authService.getCurrentUser()
-      setUser(currentUser)
-      authService.saveUser(currentUser)
-    } catch (error) {
-      throw error
-    }
+    const token = await authService.login(data)
+    authService.saveToken(token.access_token)
+    
+    // API 클라이언트에 토큰 설정
+    apiClient.defaults.headers.common['Authorization'] = `Bearer ${token.access_token}`
+    
+    // 사용자 정보 조회
+    const currentUser = await authService.getCurrentUser()
+    setUser(currentUser)
+    authService.saveUser(currentUser)
   }
 
   // 회원가입
   const handleRegister = async (data: RegisterRequest) => {
-    try {
-      await authService.register(data)
-      // 회원가입 후 자동 로그인
-      await handleLogin({ email: data.email, password: data.password })
-    } catch (error) {
-      throw error
-    }
+    await authService.register(data)
+    // 회원가입 후 자동 로그인
+    await handleLogin({ email: data.email, password: data.password })
   }
 
   // 로그아웃
@@ -118,6 +110,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 
+// Fast refresh 경고: hook과 컴포넌트를 같은 파일에서 export하는 것은 허용됨
+// eslint-disable-next-line react-refresh/only-export-components
 export const useAuth = (): AuthContextType => {
   const context = useContext(AuthContext)
   if (context === undefined) {

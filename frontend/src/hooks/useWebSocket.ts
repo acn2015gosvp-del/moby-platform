@@ -241,6 +241,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
       }))
       onError?.(error as Event)
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [url, reconnectInterval, maxReconnectAttempts, enabled])  // callback 함수들을 dependency에서 제거하여 불필요한 재생성 방지
 
   const disconnect = useCallback(() => {
@@ -344,7 +345,8 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
         }
       }
     }
-  }, [enabled])  // enabled만 dependency로 사용
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enabled])  // enabled만 dependency로 사용 (connect, disconnect는 ref로 관리)
 
   return {
     ...state,

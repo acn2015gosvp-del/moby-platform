@@ -39,7 +39,7 @@ const Monitoring: React.FC = () => {
   const selectedTimeRange = useMemo(() => {
     const option = timeRangeOptions.find(opt => opt.value === timeRange)
     return option ? { from: option.from, to: option.to } : { from: 'now-6h', to: 'now' }
-  }, [timeRange])
+  }, [timeRange, timeRangeOptions])
 
   // Grafana 대시보드 URL 생성 (API 기반)
   const grafanaDashboardUrl = useMemo(() => {

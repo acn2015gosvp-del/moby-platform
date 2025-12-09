@@ -21,10 +21,12 @@ type SortOrder = 'asc' | 'desc'
 export function AlertsPanel({
   alerts,
   loading = false,
-  onRefresh: _onRefresh,
+  onRefresh,
   onDismissAlert,
   onDeleteAll,
 }: AlertsPanelProps) {
+  // onRefresh는 향후 사용을 위해 유지
+  void onRefresh
   const [searchQuery, setSearchQuery] = useState('')
   const [levelFilter, setLevelFilter] = useState<Alert['level'] | 'all'>('all')
   const [sortField, setSortField] = useState<SortField>('ts')
@@ -67,7 +69,7 @@ export function AlertsPanel({
         case 'ts':
           comparison = new Date(a.ts).getTime() - new Date(b.ts).getTime()
           break
-        case 'level':
+        case 'level': {
           const levelOrder: Record<Alert['level'], number> = { 
             critical: 4, 
             warning: 3, 
@@ -77,6 +79,7 @@ export function AlertsPanel({
           }
           comparison = (levelOrder[a.level] ?? 0) - (levelOrder[b.level] ?? 0)
           break
+        }
         case 'message':
           comparison = a.message.localeCompare(b.message)
           break

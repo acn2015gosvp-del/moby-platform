@@ -104,7 +104,7 @@ export function DeviceProvider({ children }: DeviceProviderProps) {
       } else {
         setDevices([])
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       // 에러는 조용히 처리 (콘솔에만 기록)
       console.warn('[DeviceContext] 설비 목록 로딩 실패:', err)
       // 에러 상태는 설정하지 않음 (사용자 경험 개선)

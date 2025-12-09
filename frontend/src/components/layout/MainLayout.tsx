@@ -48,7 +48,8 @@ function MainLayout({ children }: MainLayoutProps) {
         return true
       }
       // type 필드 확인 (신규 형식: CRITICAL)
-      if ((alert as any).type === 'CRITICAL') {
+      const alertWithType = alert as Alert & { type?: string }
+      if (alertWithType.type === 'CRITICAL') {
         return true
       }
       return false
