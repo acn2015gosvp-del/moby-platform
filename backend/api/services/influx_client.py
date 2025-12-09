@@ -458,17 +458,24 @@ class InfluxDBManager:
         
         # 재시도 지연 후 버퍼에 다시 추가
         def delayed_retry():
-            time.sleep(self.retry_delay * buffered_point.retry_count)  # 지수적 지연
-            with self.buffer_lock:
-                self.buffer.append(buffered_point)
             try:
-                logger.info(
-                    f"🔄 Re-queued point for retry. "
-                    f"Measurement: {buffered_point.measurement}, "
-                    f"Retry count: {buffered_point.retry_count}/{buffered_point.max_retries}"
-                )
-            except (ValueError, OSError):
-                # 로거가 닫힌 파일에 쓰려고 시도하는 경우 무시
+                time.sleep(self.retry_delay * buffered_point.retry_count)  # 지수적 지연
+                with self.buffer_lock:
+                    self.buffer.append(buffered_point)
+                # 로거 핸들러가 닫혔는지 확인
+                if logger.handlers:
+                    try:
+                        logger.info(
+                            f"🔄 Re-queued point for retry. "
+                            f"Measurement: {buffered_point.measurement}, "
+                            f"Retry count: {buffered_point.retry_count}/{buffered_point.max_retries}"
+                        )
+                    except (ValueError, OSError, AttributeError, RuntimeError):
+                        # 로거가 닫힌 파일에 쓰려고 시도하는 경우 무시
+                        # 테스트 종료 시 로거 핸들러가 이미 닫혔을 수 있음
+                        pass
+            except Exception:
+                # 스레드가 종료되는 동안 발생할 수 있는 모든 예외 무시
                 pass
         
         threading.Thread(
