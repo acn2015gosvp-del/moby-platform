@@ -151,9 +151,10 @@ export function DeviceProvider({ children }: DeviceProviderProps) {
             setDevices(data.devices)
           }
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
         // API 실패 시 기본 데이터 유지 (이미 표시됨)
-        console.debug('[DeviceContext] API 업데이트 실패, 기본 데이터 유지:', err.message)
+        const errorMessage = err instanceof Error ? err.message : String(err)
+        console.debug('[DeviceContext] API 업데이트 실패, 기본 데이터 유지:', errorMessage)
       }
     }
     

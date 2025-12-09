@@ -13,6 +13,7 @@ import { useEffect } from 'react'
 import { toast, ToastContainer } from 'react-toastify'
 import 'react-toastify/dist/ReactToastify.css'
 import { useWebSocketContext } from '@/context/WebSocketContext'
+import type { Alert } from '@/types/alert'
 
 interface WebSocketAlert {
   type?: 'CRITICAL' | 'WARNING' | 'NOTICE' | 'RESOLVED' | 'RUL_ALERT'
@@ -37,11 +38,13 @@ export function WebSocketToast() {
     console.log('[WebSocketToast] 구독자 등록 시작...')
 
     // WebSocket 메시지 구독 (연결 상태와 관계없이 등록)
-    const unsubscribe = subscribe((alert: WebSocketAlert | unknown) => {
+    // WebSocketContext는 Alert 타입을 사용하지만, WebSocketAlert도 호환됨
+    const unsubscribe = subscribe((alert: Alert | WebSocketAlert) => {
       console.log('[WebSocketToast] ✅ 구독 콜백 호출됨! 알림 수신:', alert)
       console.log('[WebSocketToast] 알림 수신:', alert)
       try {
-        const wsAlert = (alert as WebSocketAlert)
+        // Alert 또는 WebSocketAlert 타입 처리
+        const wsAlert = alert as WebSocketAlert
 
         // CONNECTED 메시지는 무시 (연결 확인용)
         // type이 'CRITICAL' | 'WARNING' | 'NOTICE' | 'RESOLVED' | undefined이므로
