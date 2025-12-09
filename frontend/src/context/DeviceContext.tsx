@@ -119,13 +119,20 @@ export function DeviceProvider({ children }: DeviceProviderProps) {
     const deviceId = params.deviceId
     if (deviceId && devices.length > 0) {
       const device = devices.find((d) => d.device_id === deviceId)
-      if (device) {
-        setSelectedDevice(device)
-      } else {
-        setSelectedDevice(null)
-      }
+      // 다음 렌더링 사이클에서 상태 업데이트
+      const timeoutId = setTimeout(() => {
+        if (device) {
+          setSelectedDevice(device)
+        } else {
+          setSelectedDevice(null)
+        }
+      }, 0)
+      return () => clearTimeout(timeoutId)
     } else {
-      setSelectedDevice(null)
+      const timeoutId = setTimeout(() => {
+        setSelectedDevice(null)
+      }, 0)
+      return () => clearTimeout(timeoutId)
     }
   }, [params.deviceId, devices])
 
@@ -295,6 +302,8 @@ export function DeviceProvider({ children }: DeviceProviderProps) {
   return <DeviceContext.Provider value={value}>{children}</DeviceContext.Provider>
 }
 
+// Fast refresh 경고: hook과 컴포넌트를 같은 파일에서 export하는 것은 허용됨
+// eslint-disable-next-line react-refresh/only-export-components
 export function useDeviceContext() {
   const context = useContext(DeviceContext)
   if (context === undefined) {

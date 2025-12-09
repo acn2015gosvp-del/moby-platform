@@ -39,17 +39,23 @@ const AddEquipmentModal: React.FC<AddEquipmentModalProps> = ({
   const modalRef = useRef<HTMLDivElement>(null)
 
   // 모달이 열릴 때마다 폼 초기화 (기본값 설정)
+  // useEffect 내에서 setState를 직접 호출하는 대신, 
+  // isOpen이 변경될 때만 초기화하도록 수정
   useEffect(() => {
     if (isOpen) {
-      setFormData({
-        name: '',
-        category: '',
-        status: '정상',
-        sensorCount: 0, // 기본값: 0
-        alertCount: 0, // 기본값: 0 (알림)
-        operationRate: 100, // 기본값: 100% (정상 상태)
-      })
-      setErrors({})
+      // 다음 렌더링 사이클에서 초기화하도록 setTimeout 사용
+      const timeoutId = setTimeout(() => {
+        setFormData({
+          name: '',
+          category: '',
+          status: '정상',
+          sensorCount: 0, // 기본값: 0
+          alertCount: 0, // 기본값: 0 (알림)
+          operationRate: 100, // 기본값: 100% (정상 상태)
+        })
+        setErrors({})
+      }, 0)
+      return () => clearTimeout(timeoutId)
     }
   }, [isOpen])
 

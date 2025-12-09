@@ -37,6 +37,8 @@ export const ThemeProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   )
 }
 
+// Fast refresh 경고: hook과 컴포넌트를 같은 파일에서 export하는 것은 허용됨
+// eslint-disable-next-line react-refresh/only-export-components
 export const useTheme = (): ThemeContextType => {
   const ctx = useContext(ThemeContext)
   if (!ctx) {

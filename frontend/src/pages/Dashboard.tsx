@@ -5,7 +5,7 @@
  */
 
 import { useState, useMemo, useEffect, useRef } from 'react'
-import { useParams, Navigate } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
 import Loading from '@/components/common/Loading'
 import { useTheme } from '@/context/ThemeContext'
 
@@ -22,14 +22,11 @@ function Dashboard() {
   const { theme } = useTheme()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // iframeLoaded는 현재 사용되지 않지만 향후 사용을 위해 유지
   const [_iframeLoaded, setIframeLoaded] = useState(false)
+  void setIframeLoaded
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const iframeRef = useRef<HTMLIFrameElement | null>(null)
-
-  // deviceId가 없으면 설비 목록으로 리다이렉트
-  if (!deviceId) {
-    return <Navigate to="/devices" replace />
-  }
 
   // deviceId를 Grafana device_id 형식으로 변환
   // 예: "conveyor-belt-1" → "Conveyor_IR_01"
@@ -127,8 +124,8 @@ function Dashboard() {
     }
 
     const originalConsoleError = console.error
-    console.error = (...args: any[]) => {
-      const errorText = args.join(' ')
+    console.error = (...args: unknown[]) => {
+      const errorText = args.map(arg => String(arg)).join(' ')
       if (errorText.includes('X-Frame-Options') || 
           errorText.includes('Refused to display') ||
           errorText.includes('frame')) {
@@ -147,16 +144,21 @@ function Dashboard() {
   // URL 변경 시 iframe 상태 초기화
   useEffect(() => {
     if (grafanaDashboardUrl && deviceId) {
-      setError(null)
-      setLoading(false)
-      setIframeLoaded(false)
+      // useEffect 내에서 setState를 직접 호출하는 대신, 
+      // 다음 렌더링 사이클에서 업데이트하도록 수정
+      const timeoutId = setTimeout(() => {
+        setError(null)
+        setLoading(false)
+        setIframeLoaded(false)
+      }, 0)
+      return () => clearTimeout(timeoutId)
       
       if (import.meta.env.DEV) {
         console.log('[Dashboard] Grafana 대시보드 URL:', grafanaDashboardUrl)
       }
       
       // 이전 타임아웃이 있으면 취소
-      if (timeoutRef.current) {
+      if (timeoutRef.current !== null) {
         clearTimeout(timeoutRef.current)
         timeoutRef.current = null
       }

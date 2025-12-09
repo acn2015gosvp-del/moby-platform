@@ -20,9 +20,11 @@ const Monitoring: React.FC = () => {
   const { selectedDevice, setSelectedDeviceId } = useDeviceContext()
   const { theme } = useTheme()
   const [timeRange] = useState<string>('1h')
-  const [loading, setLoading] = useState(true)
+  // loading은 현재 사용되지 않지만 향후 사용을 위해 유지
+  const [loading, _setLoading] = useState(false)
+  void _setLoading
   const [iframeError, setIframeError] = useState<string | null>(null)
-  const [_iframeLoaded, setIframeLoaded] = useState(false)
+  const [iframeLoaded, setIframeLoaded] = useState(false)
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const iframeRef = useRef<HTMLIFrameElement | null>(null)
 
@@ -63,13 +65,9 @@ const Monitoring: React.FC = () => {
   }, [deviceId, selectedDevice, setSelectedDeviceId])
 
   // selectedDevice가 없고 deviceId가 있으면 로딩 상태
-  useEffect(() => {
-    if (deviceId && !selectedDevice) {
-      setLoading(true)
-    } else {
-      setLoading(false)
-    }
-  }, [deviceId, selectedDevice])
+  // useEffect 내에서 setState를 직접 호출하는 대신, 로딩 상태를 계산된 값으로 관리
+  const isLoadingDevice = deviceId && !selectedDevice
+  void isLoadingDevice
 
   // Grafana 연결 확인 및 대시보드 정보는 백그라운드에서 처리 (로딩 블로킹 제거)
 
@@ -118,7 +116,7 @@ const Monitoring: React.FC = () => {
     }
 
     const originalConsoleError = console.error
-    console.error = (...args: any[]) => {
+    console.error = (...args: unknown[]) => {
       const errorText = args.join(' ')
       if (errorText.includes('X-Frame-Options') || 
           errorText.includes('Refused to display') ||

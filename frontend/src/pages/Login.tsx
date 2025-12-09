@@ -35,7 +35,7 @@ const Login: React.FC = () => {
     try {
       await login(formData)
       navigate('/')
-    } catch (err: any) {
+    } catch (err: unknown) {
       const errorMessage = extractErrorMessage(
         err,
         '로그인에 실패했습니다. 이메일과 비밀번호를 확인해주세요.'

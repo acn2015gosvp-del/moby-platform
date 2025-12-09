@@ -10,11 +10,6 @@ export default function Reports() {
   const { deviceId } = useParams<{ deviceId?: string }>();
   const { selectedDevice } = useDeviceContext();
   const formRef = useRef<HTMLFormElement | null>(null);
-
-  // deviceId가 없으면 설비 목록으로 리다이렉트
-  if (!deviceId) {
-    return <Navigate to="/devices" replace />;
-  }
   const [loading, setLoading] = useState(false);
   const [reportContent, setReportContent] = useState<string | null>(null);
   const [reportData, setReportData] = useState<ReportResponse | null>(null);
@@ -205,35 +200,36 @@ export default function Reports() {
             generated_at: report.generated_at
           }
         );
-      } catch (pdfError: any) {
+      } catch (pdfError: unknown) {
         // PDF 다운로드 실패는 에러로 표시하지 않고 콘솔에만 로그
         console.warn('PDF 자동 다운로드 실패:', pdfError);
         // 사용자에게는 보고서는 생성되었지만 PDF 다운로드에 실패했다는 메시지를 표시하지 않음
         // (수동으로 다운로드 버튼을 클릭할 수 있으므로)
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       // 더 자세한 에러 메시지 추출
       let errorMessage = '보고서 생성 중 오류가 발생했습니다.';
       
+      const errObj = err as { message?: string; response?: { data?: unknown; status?: number }; config?: unknown }
       console.error('[Reports] 보고서 생성 오류 상세:', {
-        message: err.message,
-        response: err.response,
-        responseData: err.response?.data,
-        responseStatus: err.response?.status,
-        request: err.config,
+        message: errObj.message,
+        response: errObj.response,
+        responseData: errObj.response?.data,
+        responseStatus: errObj.response?.status,
+        request: errObj.config,
       });
       
       // 에러 응답 데이터 상세 로깅
-      if (err.response) {
-        console.error('[Reports] HTTP 응답 상태:', err.response.status);
-        console.error('[Reports] HTTP 응답 헤더:', err.response.headers);
-        console.error('[Reports] HTTP 응답 데이터 (원본):', err.response.data);
-        console.error('[Reports] HTTP 응답 데이터 (타입):', typeof err.response.data);
-        console.error('[Reports] HTTP 응답 데이터 (JSON):', JSON.stringify(err.response.data, null, 2));
+      if (errObj.response) {
+        console.error('[Reports] HTTP 응답 상태:', errObj.response.status);
+        console.error('[Reports] HTTP 응답 헤더:', errObj.response.headers);
+        console.error('[Reports] HTTP 응답 데이터 (원본):', errObj.response.data);
+        console.error('[Reports] HTTP 응답 데이터 (타입):', typeof errObj.response.data);
+        console.error('[Reports] HTTP 응답 데이터 (JSON):', JSON.stringify(errObj.response.data, null, 2));
       }
       
-      if (err.response?.data) {
-        const errorData = err.response.data;
+      if (errObj.response?.data) {
+        const errorData = errObj.response.data;
         console.log('[Reports] 에러 응답 데이터 (파싱):', errorData);
         
         // ErrorResponse 형식인 경우 (success: false, error: {code, message})
@@ -265,16 +261,16 @@ export default function Reports() {
         }
       } 
       // 응답이 없지만 상태 코드가 있는 경우
-      else if (err.response?.status) {
-        errorMessage = `서버 오류 (${err.response.status}): ${err.message || '알 수 없는 오류'}`;
+      else if (errObj.response?.status) {
+        errorMessage = `서버 오류 (${errObj.response.status}): ${errObj.message || '알 수 없는 오류'}`;
       }
       // 네트워크 오류
-      else if (err.request) {
+      else if ((errObj as { request?: unknown }).request) {
         errorMessage = '서버에 연결할 수 없습니다. 백엔드 서버가 실행 중인지 확인하세요.';
       }
       // 기타 오류
-      else if (err.message) {
-        errorMessage = err.message;
+      else if (errObj.message) {
+        errorMessage = errObj.message;
       }
       
       console.error('[Reports] 최종 에러 메시지:', errorMessage);
@@ -318,13 +314,19 @@ export default function Reports() {
         }
       );
       console.log('[Reports] PDF 다운로드 완료');
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('[Reports] PDF 다운로드 오류:', error);
-      const errorMessage = error?.message || error?.toString() || 'PDF 다운로드 중 오류가 발생했습니다.';
+      const errorObj = error instanceof Error ? error : { message: String(error) }
+      const errorMessage = errorObj.message || 'PDF 다운로드 중 오류가 발생했습니다.';
       setError(errorMessage);
       alert(`PDF 다운로드 실패: ${errorMessage}`);
     }
   };
+
+  // deviceId가 없으면 설비 목록으로 리다이렉트
+  if (!deviceId) {
+    return <Navigate to="/devices" replace />;
+  }
 
   return (
     <div className="min-h-screen bg-background-main p-6">

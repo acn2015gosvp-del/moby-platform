@@ -159,7 +159,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
             type: alertType as 'CRITICAL' | 'WARNING' | 'NOTICE' | 'RESOLVED' | undefined,
             color: rawData.color,
             device_id: rawData.device_id || rawData.sensor_id || rawData.sensor,
-          } as any
+          } as Alert
           
           console.log('[useWebSocket] 알림 타입 변환:', { 
             rawType, 
@@ -180,7 +180,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
 
       ws.onerror = (error) => {
         isConnectingRef.current = false
-        const errorMessage = (error as any).message || 'Unknown error'
+        const errorMessage = (error instanceof Error ? error.message : (error as { message?: string })?.message) || 'Unknown error'
         console.error('[useWebSocket] WebSocket 에러:', errorMessage, error)
         
         // "Insufficient resources" 에러는 서버가 실행되지 않았거나 리소스 부족을 의미

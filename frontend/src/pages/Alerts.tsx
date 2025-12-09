@@ -14,11 +14,6 @@ import { getDismissedAlerts, dismissAlert, clearDismissedAlerts } from '@/utils/
 
 function Alerts() {
   const { deviceId } = useParams<{ deviceId?: string }>()
-
-  // deviceId가 없으면 설비 목록으로 리다이렉트
-  if (!deviceId) {
-    return <Navigate to="/devices" replace />
-  }
   const [alerts, setAlerts] = useState<Alert[]>([])
   const [toastAlerts, setToastAlerts] = useState<Alert[]>([])
   const [loading, setLoading] = useState(true)
@@ -45,15 +40,16 @@ function Alerts() {
       } else {
         setError('알림 데이터를 불러올 수 없습니다.')
       }
-    } catch (err: any) {
-      const errorMessage = err.message || err.response?.data?.message || '알림을 불러오는데 실패했습니다.'
+    } catch (err: unknown) {
+      const errObj = err instanceof Error ? err : (err as { message?: string; code?: string; response?: unknown; config?: unknown })
+      const errorMessage = errObj.message || (errObj as { response?: { data?: { message?: string } } })?.response?.data?.message || '알림을 불러오는데 실패했습니다.'
       setError(errorMessage)
       console.error('Failed to fetch alerts:', err)
       console.error('Error details:', {
-        message: err.message,
-        code: err.code,
-        response: err.response,
-        config: err.config,
+        message: errObj.message,
+        code: (errObj as { code?: string }).code,
+        response: errObj.response,
+        config: errObj.config,
       })
     } finally {
       setLoading(false)
@@ -157,13 +153,19 @@ function Alerts() {
         // 새로고침
         await fetchAlerts()
       }
-    } catch (err: any) {
-      setError(err.response?.data?.message || '전체 알림 삭제에 실패했습니다.')
+    } catch (err: unknown) {
+      const errorMessage = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || '전체 알림 삭제에 실패했습니다.'
+      setError(errorMessage)
       console.error('Failed to delete all alerts:', err)
     } finally {
       setLoading(false)
     }
   }, [fetchAlerts])
+
+  // deviceId가 없으면 설비 목록으로 리다이렉트
+  if (!deviceId) {
+    return <Navigate to="/devices" replace />
+  }
 
   return (
     <div className="min-h-screen bg-background-main p-6 space-y-6">
