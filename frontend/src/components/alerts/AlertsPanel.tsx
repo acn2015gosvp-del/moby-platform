@@ -21,7 +21,7 @@ type SortOrder = 'asc' | 'desc'
 export function AlertsPanel({
   alerts,
   loading = false,
-  onRefresh,
+  onRefresh: _onRefresh,
   onDismissAlert,
   onDeleteAll,
 }: AlertsPanelProps) {
@@ -68,8 +68,14 @@ export function AlertsPanel({
           comparison = new Date(a.ts).getTime() - new Date(b.ts).getTime()
           break
         case 'level':
-          const levelOrder = { critical: 3, warning: 2, info: 1 }
-          comparison = levelOrder[a.level] - levelOrder[b.level]
+          const levelOrder: Record<Alert['level'], number> = { 
+            critical: 4, 
+            warning: 3, 
+            info: 2,
+            notice: 1,
+            resolved: 0
+          }
+          comparison = (levelOrder[a.level] ?? 0) - (levelOrder[b.level] ?? 0)
           break
         case 'message':
           comparison = a.message.localeCompare(b.message)

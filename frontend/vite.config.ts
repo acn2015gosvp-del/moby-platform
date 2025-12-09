@@ -34,12 +34,12 @@ export default defineConfig({
         timeout: 300000, // 300초 (5분) - InfluxDB 쿼리 최적화 후에도 LLM 생성 시간 고려
         // 연결 재사용 (Keep-Alive)
         configure: (proxy, _options) => {
-          proxy.on('proxyReq', (proxyReq, req, _res) => {
+          proxy.on('proxyReq', (proxyReq, _req, _res) => {
             // 요청 헤더 최적화
             proxyReq.setHeader('Connection', 'keep-alive');
           });
           // 프록시 에러 처리
-          proxy.on('error', (err, req, res) => {
+          proxy.on('error', (err, _req, _res) => {
             console.error('[Vite Proxy] 프록시 오류:', err);
           });
         },

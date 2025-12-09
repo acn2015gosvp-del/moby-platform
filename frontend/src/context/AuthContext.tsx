@@ -32,7 +32,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   })
   
   // 즉시 false로 설정하여 로딩 화면 방지
-  const [isLoading, setIsLoading] = useState(false)
+  const [isLoading, _setIsLoading] = useState(false)
 
   // 초기화: 사용자 정보 재확인 (백그라운드에서만)
   useEffect(() => {

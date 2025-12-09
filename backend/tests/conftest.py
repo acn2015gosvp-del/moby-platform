@@ -100,3 +100,56 @@ def sample_alert_data():
         "enable_llm_summary": False
     }
 
+
+@pytest.fixture
+def authenticated_user(db_session):
+    """인증된 테스트 사용자 생성"""
+    from backend.api.models.user import User
+    from backend.api.models.role import Role
+    from backend.api.services.auth_service import get_password_hash
+    
+    # 테스트 사용자 생성
+    user = User(
+        email="test@example.com",
+        username="testuser",
+        hashed_password=get_password_hash("Test1234"),
+        role=Role.ADMIN.value,  # 모든 권한을 가진 ADMIN 역할
+        is_active=True
+    )
+    db_session.add(user)
+    db_session.commit()
+    db_session.refresh(user)
+    return user
+
+
+@pytest.fixture
+def auth_token(authenticated_user):
+    """인증 토큰 생성"""
+    from backend.api.services.auth_service import create_access_token
+    from datetime import timedelta
+    
+    token_data = {"sub": authenticated_user.email}
+    token = create_access_token(data=token_data, expires_delta=timedelta(hours=1))
+    return token
+
+
+@pytest.fixture
+def auth_headers(auth_token):
+    """인증 헤더 반환"""
+    return {"Authorization": f"Bearer {auth_token}"}
+
+
+@pytest.fixture
+def authenticated_client(client, auth_headers):
+    """인증된 테스트 클라이언트"""
+    # 클라이언트에 기본 헤더 설정
+    original_request = client.request
+    
+    def authenticated_request(method, url, **kwargs):
+        if "headers" not in kwargs:
+            kwargs["headers"] = {}
+        kwargs["headers"].update(auth_headers)
+        return original_request(method, url, **kwargs)
+    
+    client.request = authenticated_request
+    return client

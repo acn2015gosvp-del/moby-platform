@@ -50,7 +50,7 @@ class TestMqttClientManager:
     def mqtt_manager(self, mock_mqtt_client):
         """MqttClientManager 인스턴스 생성"""
         with patch('backend.api.services.mqtt_client.settings') as mock_settings:
-            mock_settings.MQTT_HOST = "localhost"
+            mock_settings.MQTT_HOST = "127.0.0.1"
             mock_settings.MQTT_PORT = 1883
             manager = MqttClientManager()
             return manager
@@ -58,11 +58,11 @@ class TestMqttClientManager:
     def test_init(self, mock_mqtt_client):
         """MqttClientManager 초기화 테스트"""
         with patch('backend.api.services.mqtt_client.settings') as mock_settings:
-            mock_settings.MQTT_HOST = "localhost"
+            mock_settings.MQTT_HOST = "127.0.0.1"
             mock_settings.MQTT_PORT = 1883
             manager = MqttClientManager()
             
-            assert manager.host == "localhost"
+            assert manager.host == "127.0.0.1"
             assert manager.port == 1883
             assert manager.message_queue is not None
             assert manager.client is not None

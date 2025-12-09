@@ -22,7 +22,7 @@ const Monitoring: React.FC = () => {
   const [timeRange] = useState<string>('1h')
   const [loading, setLoading] = useState(true)
   const [iframeError, setIframeError] = useState<string | null>(null)
-  const [iframeLoaded, setIframeLoaded] = useState(false)
+  const [_iframeLoaded, setIframeLoaded] = useState(false)
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const iframeRef = useRef<HTMLIFrameElement | null>(null)
 

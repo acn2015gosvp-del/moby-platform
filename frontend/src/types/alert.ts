@@ -2,7 +2,7 @@
  * 알림 관련 타입 정의
  */
 
-export type AlertLevel = 'info' | 'warning' | 'critical'
+export type AlertLevel = 'info' | 'warning' | 'critical' | 'notice' | 'resolved'
 export type AlertStatus = 'pending' | 'acknowledged' | 'resolved'
 
 export interface Alert {
