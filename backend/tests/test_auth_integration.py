@@ -7,17 +7,19 @@
 import pytest
 from fastapi import status
 from unittest.mock import patch, MagicMock
+import bcrypt
 
 
 class TestAuthIntegration:
     """인증 API 통합 테스트"""
     
-    @patch('backend.api.services.auth_service.pwd_context')
-    def test_register_success(self, mock_pwd_context, client, sample_user_data):
+    @patch('bcrypt.hashpw')
+    @patch('bcrypt.gensalt')
+    def test_register_success(self, mock_gensalt, mock_hashpw, client, sample_user_data):
         """회원가입 성공 테스트"""
         # bcrypt 해시 모킹
-        mock_pwd_context.hash.return_value = "$2b$12$mocked_hash_value_for_testing"
-        mock_pwd_context.verify.return_value = True
+        mock_gensalt.return_value = b"$2b$12$mocked_salt_for_testing"
+        mock_hashpw.return_value = b"$2b$12$mocked_hash_value_for_testing"
         
         response = client.post("/auth/register", json=sample_user_data)
         
@@ -29,12 +31,13 @@ class TestAuthIntegration:
         assert "id" in data["data"]
         assert "created_at" in data["data"]
     
-    @patch('backend.api.services.auth_service.pwd_context')
-    def test_register_duplicate_email(self, mock_pwd_context, client, sample_user_data):
+    @patch('bcrypt.hashpw')
+    @patch('bcrypt.gensalt')
+    def test_register_duplicate_email(self, mock_gensalt, mock_hashpw, client, sample_user_data):
         """중복 이메일 회원가입 실패 테스트"""
         # bcrypt 해시 모킹
-        mock_pwd_context.hash.return_value = "$2b$12$mocked_hash_value_for_testing"
-        mock_pwd_context.verify.return_value = True
+        mock_gensalt.return_value = b"$2b$12$mocked_salt_for_testing"
+        mock_hashpw.return_value = b"$2b$12$mocked_hash_value_for_testing"
         
         # 첫 번째 회원가입
         register_response = client.post("/auth/register", json=sample_user_data)
@@ -59,12 +62,15 @@ class TestAuthIntegration:
         
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
     
-    @patch('backend.api.services.auth_service.pwd_context')
-    def test_login_success(self, mock_pwd_context, client, sample_user_data):
+    @patch('bcrypt.checkpw')
+    @patch('bcrypt.hashpw')
+    @patch('bcrypt.gensalt')
+    def test_login_success(self, mock_gensalt, mock_hashpw, mock_checkpw, client, sample_user_data):
         """로그인 성공 테스트"""
         # bcrypt 해시 모킹
-        mock_pwd_context.hash.return_value = "$2b$12$mocked_hash_value_for_testing"
-        mock_pwd_context.verify.return_value = True
+        mock_gensalt.return_value = b"$2b$12$mocked_salt_for_testing"
+        mock_hashpw.return_value = b"$2b$12$mocked_hash_value_for_testing"
+        mock_checkpw.return_value = True  # 비밀번호 검증 성공
         
         # 먼저 회원가입
         client.post("/auth/register", json=sample_user_data)
@@ -99,12 +105,15 @@ class TestAuthIntegration:
             # 표준 에러 응답 형식
             assert "error" in data or "detail" in data
     
-    @patch('backend.api.services.auth_service.pwd_context')
-    def test_get_current_user_success(self, mock_pwd_context, client, sample_user_data):
+    @patch('bcrypt.checkpw')
+    @patch('bcrypt.hashpw')
+    @patch('bcrypt.gensalt')
+    def test_get_current_user_success(self, mock_gensalt, mock_hashpw, mock_checkpw, client, sample_user_data):
         """현재 사용자 정보 조회 성공 테스트"""
         # bcrypt 해시 모킹
-        mock_pwd_context.hash.return_value = "$2b$12$mocked_hash_value_for_testing"
-        mock_pwd_context.verify.return_value = True
+        mock_gensalt.return_value = b"$2b$12$mocked_salt_for_testing"
+        mock_hashpw.return_value = b"$2b$12$mocked_hash_value_for_testing"
+        mock_checkpw.return_value = True  # 비밀번호 검증 성공
         
         # 회원가입 및 로그인
         client.post("/auth/register", json=sample_user_data)

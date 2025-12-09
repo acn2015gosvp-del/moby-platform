@@ -16,11 +16,12 @@ class TestAlertStorageIntegration:
         self,
         client,
         db_session,
-        sample_alert_data
+        sample_alert_data,
+        auth_headers
     ):
         """알림 생성 및 데이터베이스 저장 테스트"""
-        # 알림 생성 요청
-        response = client.post("/alerts/evaluate", json=sample_alert_data)
+        # 알림 생성 요청 (인증 헤더 필요)
+        response = client.post("/alerts/evaluate", json=sample_alert_data, headers=auth_headers)
         
         # 이상이 탐지되면 201, 아니면 204
         assert response.status_code in [status.HTTP_201_CREATED, status.HTTP_204_NO_CONTENT]
@@ -44,18 +45,19 @@ class TestAlertStorageIntegration:
         self,
         client,
         db_session,
-        sample_alert_data
+        sample_alert_data,
+        auth_headers
     ):
         """최신 알림 조회 성공 테스트"""
         # 알림 생성 (여러 개)
         for i in range(3):
             alert_data = sample_alert_data.copy()
             alert_data["vector"] = [1.5 + i, 2.3 + i, 3.1 + i]
-            response = client.post("/alerts/evaluate", json=alert_data)
+            response = client.post("/alerts/evaluate", json=alert_data, headers=auth_headers)
             # 이상이 탐지되지 않을 수 있으므로 204도 허용
         
-        # 최신 알림 조회
-        response = client.get("/alerts/latest?limit=10")
+        # 최신 알림 조회 (인증 헤더 필요)
+        response = client.get("/alerts/latest?limit=10", headers=auth_headers)
         
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
@@ -66,38 +68,40 @@ class TestAlertStorageIntegration:
         self,
         client,
         db_session,
-        sample_alert_data
+        sample_alert_data,
+        auth_headers
     ):
         """필터링을 사용한 최신 알림 조회 테스트"""
-        # 센서 ID 필터링
+        # 센서 ID 필터링 (인증 헤더 필요)
         response = client.get(
-            f"/alerts/latest?limit=10&sensor_id={sample_alert_data['sensor_id']}"
+            f"/alerts/latest?limit=10&sensor_id={sample_alert_data['sensor_id']}",
+            headers=auth_headers
         )
         
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
         assert data["success"] is True
         
-        # 레벨 필터링
-        response = client.get("/alerts/latest?limit=10&level=critical")
+        # 레벨 필터링 (인증 헤더 필요)
+        response = client.get("/alerts/latest?limit=10&level=critical", headers=auth_headers)
         
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
         assert data["success"] is True
     
-    def test_get_latest_alerts_invalid_limit(self, client):
+    def test_get_latest_alerts_invalid_limit(self, client, auth_headers):
         """잘못된 limit 파라미터 테스트"""
-        # limit이 0인 경우
-        response = client.get("/alerts/latest?limit=0")
+        # limit이 0인 경우 (인증 헤더 필요)
+        response = client.get("/alerts/latest?limit=0", headers=auth_headers)
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         
-        # limit이 100을 초과하는 경우
-        response = client.get("/alerts/latest?limit=101")
+        # limit이 100을 초과하는 경우 (인증 헤더 필요)
+        response = client.get("/alerts/latest?limit=101", headers=auth_headers)
         assert response.status_code == status.HTTP_400_BAD_REQUEST
     
-    def test_get_latest_alerts_invalid_level(self, client):
+    def test_get_latest_alerts_invalid_level(self, client, auth_headers):
         """잘못된 level 파라미터 테스트"""
-        response = client.get("/alerts/latest?level=invalid")
+        response = client.get("/alerts/latest?level=invalid", headers=auth_headers)
         
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         data = response.json()

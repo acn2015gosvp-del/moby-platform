@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [ main, develop ]
 
+permissions:
+  contents: read
+  packages: write
+
 jobs:
   backend-tests:
     name: Backend Tests
@@ -46,6 +50,7 @@ jobs:
           ENVIRONMENT: test
           DEBUG: false
           SECRET_KEY: test-secret-key-for-ci
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/test_db
           INFLUX_URL: http://localhost:8086
           INFLUX_TOKEN: test-token
           INFLUX_ORG: test-org
