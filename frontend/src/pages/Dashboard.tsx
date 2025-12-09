@@ -141,14 +141,6 @@ function Dashboard() {
   // URL 변경 시 iframe 상태 초기화
   useEffect(() => {
     if (grafanaDashboardUrl && deviceId) {
-      // useEffect 내에서 setState를 직접 호출하는 대신, 
-      // 다음 렌더링 사이클에서 업데이트하도록 수정
-      const timeoutId = setTimeout(() => {
-        setError(null)
-        setLoading(false)
-      }, 0)
-      return () => clearTimeout(timeoutId)
-      
       if (import.meta.env.DEV) {
         console.log('[Dashboard] Grafana 대시보드 URL:', grafanaDashboardUrl)
       }
@@ -158,6 +150,14 @@ function Dashboard() {
         clearTimeout(timeoutRef.current as unknown as number)
         timeoutRef.current = null
       }
+      
+      // useEffect 내에서 setState를 직접 호출하는 대신, 
+      // 다음 렌더링 사이클에서 업데이트하도록 수정
+      const timeoutId = setTimeout(() => {
+        setError(null)
+        setLoading(false)
+      }, 0)
+      return () => clearTimeout(timeoutId)
     }
   }, [deviceId, grafanaDashboardUrl])
 
