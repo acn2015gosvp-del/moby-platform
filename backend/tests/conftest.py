@@ -5,6 +5,7 @@ Pytest 설정 및 공통 Fixture
 """
 
 import pytest
+import os
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -13,15 +14,32 @@ from sqlalchemy.pool import StaticPool
 from backend.main import app
 from backend.api.services.database import Base, get_db
 
-# 테스트용 SQLite 데이터베이스 (메모리)
-SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
-
-# 테스트용 엔진 생성
-engine = create_engine(
-    SQLALCHEMY_DATABASE_URL,
-    connect_args={"check_same_thread": False},
-    poolclass=StaticPool,
+# 환경 변수에서 DATABASE_URL을 가져오거나, 기본값으로 SQLite 사용
+# CI 환경에서는 PostgreSQL을 사용 (환경 변수로 설정)
+# 로컬 개발 환경에서는 SQLite 사용 (기본값)
+SQLALCHEMY_DATABASE_URL = os.getenv(
+    "DATABASE_URL",
+    "sqlite:///:memory:"  # 기본값: SQLite 메모리 DB (테스트용)
 )
+
+# 데이터베이스 타입에 따라 엔진 설정 다르게 적용
+is_postgresql = SQLALCHEMY_DATABASE_URL.startswith("postgresql://") or SQLALCHEMY_DATABASE_URL.startswith("postgres://")
+
+if is_postgresql:
+    # PostgreSQL 설정 (CI 환경)
+    engine = create_engine(
+        SQLALCHEMY_DATABASE_URL,
+        pool_pre_ping=True,  # 연결 상태 확인
+        pool_size=5,
+        max_overflow=10,
+    )
+else:
+    # SQLite 설정 (로컬 개발 환경)
+    engine = create_engine(
+        SQLALCHEMY_DATABASE_URL,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
 
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
@@ -153,3 +171,21 @@ def authenticated_client(client, auth_headers):
     
     client.request = authenticated_request
     return client
+
+
+@pytest.fixture(scope="function", autouse=True)
+def cleanup_influx_manager():
+    """
+    각 테스트 후 InfluxDB Manager를 정리하는 fixture.
+    autouse=True로 설정하여 모든 테스트에서 자동으로 실행됩니다.
+    """
+    yield
+    # 테스트 종료 후 InfluxDB Manager 정리
+    try:
+        from backend.api.services.influx_client import _get_influx_manager
+        manager = _get_influx_manager()
+        if manager is not None:
+            manager.close()
+    except Exception:
+        # 정리 실패 시 무시 (이미 정리되었을 수 있음)
+        pass

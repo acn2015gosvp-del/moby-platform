@@ -24,6 +24,35 @@ from .schemas.models.core.config import settings
 
 logger = logging.getLogger(__name__)
 
+
+def _safe_log(level: str, message: str, *args, **kwargs):
+    """
+    안전한 로깅 헬퍼 함수.
+    
+    로거가 닫힌 파일에 쓰려고 시도하는 경우를 방지합니다.
+    테스트 종료 시 백그라운드 스레드가 로깅을 시도할 때 발생하는 오류를 방지합니다.
+    
+    Args:
+        level: 로깅 레벨 ('info', 'warning', 'error', 'debug')
+        message: 로그 메시지
+        *args, **kwargs: 추가 인자 (logger 메서드에 전달)
+    """
+    try:
+        if logger is None:
+            return
+        if not hasattr(logger, 'handlers') or not logger.handlers:
+            return
+        
+        log_method = getattr(logger, level, None)
+        if log_method is None:
+            return
+        
+        log_method(message, *args, **kwargs)
+    except (ValueError, OSError, AttributeError, RuntimeError, TypeError):
+        # 로거가 닫힌 파일에 쓰려고 시도하는 경우 무시
+        # 또는 logger가 None이거나 handlers가 없는 경우 무시
+        pass
+
 # -------------------------------------------------------------------
 # 배치 쓰기 버퍼 항목
 # -------------------------------------------------------------------
@@ -111,17 +140,13 @@ class InfluxDBManager:
         )
         self.flush_thread.start()
         
-        try:
-            if logger.handlers:
-                logger.info(
-                    f"✅ InfluxDB manager initialized. "
-                    f"URL: {settings.INFLUX_URL}, "
-                    f"Buffer size: {buffer_size}, "
-                    f"Flush interval: {flush_interval}s"
-                )
-        except (ValueError, OSError, AttributeError, RuntimeError):
-            # 로거가 닫힌 파일에 쓰려고 시도하는 경우 무시
-            pass
+        _safe_log(
+            "info",
+            f"✅ InfluxDB manager initialized. "
+            f"URL: {settings.INFLUX_URL}, "
+            f"Buffer size: {buffer_size}, "
+            f"Flush interval: {flush_interval}s"
+        )
     
     def write_point(
         self,
@@ -159,28 +184,20 @@ class InfluxDBManager:
                 self.buffer.append(buffered_point)
                 buffer_len = len(self.buffer)
                 
-                try:
-                    if logger.handlers:
-                        logger.debug(
-                            f"📥 Point buffered. "
-                            f"Measurement: {measurement}, "
-                            f"Buffer size: {buffer_len}/{self.buffer_size}"
-                        )
-                except (ValueError, OSError, AttributeError, RuntimeError):
-                    # 로거가 닫힌 파일에 쓰려고 시도하는 경우 무시
-                    pass
+                _safe_log(
+                    "debug",
+                    f"📥 Point buffered. "
+                    f"Measurement: {measurement}, "
+                    f"Buffer size: {buffer_len}/{self.buffer_size}"
+                )
                 
                 # 버퍼가 가득 차면 즉시 플러시
                 if buffer_len >= self.buffer_size:
-                    try:
-                        if logger.handlers:
-                            logger.info(
-                                f"🔄 Buffer full ({buffer_len} points). "
-                                f"Triggering immediate flush..."
-                            )
-                    except (ValueError, OSError, AttributeError, RuntimeError):
-                        # 로거가 닫힌 파일에 쓰려고 시도하는 경우 무시
-                        pass
+                    _safe_log(
+                        "info",
+                        f"🔄 Buffer full ({buffer_len} points). "
+                        f"Triggering immediate flush..."
+                    )
                     threading.Thread(
                         target=self._flush_buffer,
                         daemon=True,
@@ -206,12 +223,7 @@ class InfluxDBManager:
         """
         주기적으로 버퍼를 플러시하는 백그라운드 스레드 함수.
         """
-        try:
-            if logger.handlers:
-                logger.info("🔄 InfluxDB periodic flush thread started.")
-        except (ValueError, OSError, AttributeError, RuntimeError):
-            # 로거가 닫힌 파일에 쓰려고 시도하는 경우 무시
-            pass
+        _safe_log("info", "🔄 InfluxDB periodic flush thread started.")
         
         while not self._shutdown_flag.is_set():
             try:
@@ -221,30 +233,22 @@ class InfluxDBManager:
                 
                 with self.buffer_lock:
                     if len(self.buffer) > 0:
-                        try:
-                            if logger.handlers:
-                                logger.debug(
-                                    f"⏰ Periodic flush triggered. "
-                                    f"Buffer size: {len(self.buffer)}"
-                                )
-                        except (ValueError, OSError, AttributeError, RuntimeError):
-                            # 로거가 닫힌 파일에 쓰려고 시도하는 경우 무시
-                            pass
+                        _safe_log(
+                            "debug",
+                            f"⏰ Periodic flush triggered. "
+                            f"Buffer size: {len(self.buffer)}"
+                        )
                         self._flush_buffer_internal()
                         
             except Exception as e:
                 # shutdown_flag가 설정되었으면 종료
                 if self._shutdown_flag.is_set():
                     break
-                try:
-                    if logger.handlers:
-                        logger.error(
-                            f"❌ Error in periodic flush thread: {e}",
-                            exc_info=True
-                        )
-                except (ValueError, OSError, AttributeError, RuntimeError):
-                    # 로거가 닫힌 파일에 쓰려고 시도하는 경우 무시
-                    pass
+                _safe_log(
+                    "error",
+                    f"❌ Error in periodic flush thread: {e}",
+                    exc_info=True
+                )
     
     def _flush_buffer(self):
         """
@@ -268,14 +272,10 @@ class InfluxDBManager:
         if not points_to_write:
             return
         
-        try:
-            if logger.handlers:
-                logger.info(
-                    f"📤 Flushing {len(points_to_write)} points to InfluxDB..."
-                )
-        except (ValueError, OSError, AttributeError, RuntimeError):
-            # 로거가 닫힌 파일에 쓰려고 시도하는 경우 무시
-            pass
+        _safe_log(
+            "info",
+            f"📤 Flushing {len(points_to_write)} points to InfluxDB..."
+        )
         
         # 포인트를 InfluxDB Point 객체로 변환
         influx_points = []
@@ -297,41 +297,28 @@ class InfluxDBManager:
                 influx_points.append(point)
                 
             except Exception as e:
-                try:
-                    if logger.handlers:
-                        logger.error(
-                            f"❌ Failed to convert point. "
-                            f"Measurement: {buffered_point.measurement}, Error: {e}",
-                            exc_info=True
-                        )
-                except (ValueError, OSError, AttributeError, RuntimeError):
-                    # 로거가 닫힌 파일에 쓰려고 시도하는 경우 무시
-                    pass
+                _safe_log(
+                    "error",
+                    f"❌ Failed to convert point. "
+                    f"Measurement: {buffered_point.measurement}, Error: {e}",
+                    exc_info=True
+                )
                 # 변환 실패한 포인트는 재시도 큐에 추가
                 self._retry_point(buffered_point)
         
         if not influx_points:
-            try:
-                if logger.handlers:
-                    logger.warning("⚠️ No valid points to write after conversion.")
-            except (ValueError, OSError, AttributeError, RuntimeError):
-                # 로거가 닫힌 파일에 쓰려고 시도하는 경우 무시
-                pass
+            _safe_log("warning", "⚠️ No valid points to write after conversion.")
             return
         
         # 배치 쓰기 시도
         success = self._write_batch(points_to_write, influx_points)
         
         if not success:
-            try:
-                if logger.handlers:
-                    logger.warning(
-                        f"⚠️ Batch write failed. "
-                        f"Re-queuing {len(points_to_write)} points for retry."
-                    )
-            except (ValueError, OSError, AttributeError, RuntimeError):
-                # 로거가 닫힌 파일에 쓰려고 시도하는 경우 무시
-                pass
+            _safe_log(
+                "warning",
+                f"⚠️ Batch write failed. "
+                f"Re-queuing {len(points_to_write)} points for retry."
+            )
     
     def _write_batch(
         self,
@@ -354,58 +341,46 @@ class InfluxDBManager:
         # 모든 포인트가 같은 버킷인지 확인
         bucket = buffered_points[0].bucket
         if not all(p.bucket == bucket for p in buffered_points):
-            try:
-                if logger.handlers:
-                    logger.warning(
-                        "⚠️ Points have different buckets. "
-                        "Writing separately by bucket."
-                    )
-            except (ValueError, OSError, AttributeError, RuntimeError):
-                # 로거가 닫힌 파일에 쓰려고 시도하는 경우 무시
-                pass
+            _safe_log(
+                "warning",
+                "⚠️ Points have different buckets. "
+                "Writing separately by bucket."
+            )
             return self._write_batch_by_bucket(buffered_points, influx_points)
         
         try:
             # 배치 쓰기
             self.write_api.write(bucket=bucket, record=influx_points)
             
-            try:
-                if logger.handlers:
-                    logger.info(
-                        f"✅ Successfully wrote {len(influx_points)} points to bucket '{bucket}'."
-                    )
-            except (ValueError, OSError, AttributeError, RuntimeError):
-                # 로거가 닫힌 파일에 쓰려고 시도하는 경우 무시
-                pass
+            _safe_log(
+                "info",
+                f"✅ Successfully wrote {len(influx_points)} points to bucket '{bucket}'."
+            )
             return True
             
         except InfluxDBError as e:
-            try:
-                if logger.handlers:
-                    logger.error(
-                        f"❌ InfluxDB error during batch write. "
-                        f"Bucket: {bucket}, Points: {len(influx_points)}, Error: {e}",
-                        exc_info=True
-                    )
-            except (ValueError, OSError, AttributeError, RuntimeError):
-                # 로거가 닫힌 파일에 쓰려고 시도하는 경우 무시
-                pass
+            _safe_log(
+                "error",
+                f"❌ InfluxDB error during batch write. "
+                f"Bucket: {bucket}, Points: {len(influx_points)}, Error: {e}",
+                exc_info=True
+            )
             # 재시도 큐에 추가
             for buffered_point in buffered_points:
                 self._retry_point(buffered_point)
             return False
             
         except Exception as e:
-            try:
-                if logger.handlers:
-                    logger.error(
-                        f"❌ Unexpected error during batch write. "
-                        f"Bucket: {bucket}, Points: {len(influx_points)}, Error: {e}",
-                        exc_info=True
-                    )
-            except (ValueError, OSError, AttributeError, RuntimeError):
-                # 로거가 닫힌 파일에 쓰려고 시도하는 경우 무시
-                pass
+            _safe_log(
+                "error",
+                f"❌ Unexpected error during batch write. "
+                f"Bucket: {bucket}, Points: {len(influx_points)}, Error: {e}",
+                exc_info=True
+            )
+            # 재시도 큐에 추가
+            for buffered_point in buffered_points:
+                self._retry_point(buffered_point)
+            return False
             # 재시도 큐에 추가
             for buffered_point in buffered_points:
                 self._retry_point(buffered_point)
@@ -466,17 +441,13 @@ class InfluxDBManager:
             buffered_point: 재시도할 포인트
         """
         if buffered_point.retry_count >= buffered_point.max_retries:
-            try:
-                if logger.handlers:
-                    logger.error(
-                        f"❌ Point exceeded max retries. Dropping point. "
-                        f"Measurement: {buffered_point.measurement}, "
-                        f"Bucket: {buffered_point.bucket}, "
-                        f"Retry count: {buffered_point.retry_count}"
-                    )
-            except (ValueError, OSError, AttributeError, RuntimeError):
-                # 로거가 닫힌 파일에 쓰려고 시도하는 경우 무시
-                pass
+            _safe_log(
+                "error",
+                f"❌ Point exceeded max retries. Dropping point. "
+                f"Measurement: {buffered_point.measurement}, "
+                f"Bucket: {buffered_point.bucket}, "
+                f"Retry count: {buffered_point.retry_count}"
+            )
             return
         
         buffered_point.retry_count += 1
@@ -487,18 +458,13 @@ class InfluxDBManager:
                 time.sleep(self.retry_delay * buffered_point.retry_count)  # 지수적 지연
                 with self.buffer_lock:
                     self.buffer.append(buffered_point)
-                # 로거 핸들러가 닫혔는지 확인
-                if logger.handlers:
-                    try:
-                        logger.info(
-                            f"🔄 Re-queued point for retry. "
-                            f"Measurement: {buffered_point.measurement}, "
-                            f"Retry count: {buffered_point.retry_count}/{buffered_point.max_retries}"
-                        )
-                    except (ValueError, OSError, AttributeError, RuntimeError):
-                        # 로거가 닫힌 파일에 쓰려고 시도하는 경우 무시
-                        # 테스트 종료 시 로거 핸들러가 이미 닫혔을 수 있음
-                        pass
+                # 안전한 로깅 사용
+                _safe_log(
+                    "info",
+                    f"🔄 Re-queued point for retry. "
+                    f"Measurement: {buffered_point.measurement}, "
+                    f"Retry count: {buffered_point.retry_count}/{buffered_point.max_retries}"
+                )
             except Exception:
                 # 스레드가 종료되는 동안 발생할 수 있는 모든 예외 무시
                 pass
@@ -513,12 +479,7 @@ class InfluxDBManager:
         """
         수동으로 버퍼를 플러시합니다.
         """
-        try:
-            if logger.handlers:
-                logger.info("🔄 Manual flush requested.")
-        except (ValueError, OSError, AttributeError, RuntimeError):
-            # 로거가 닫힌 파일에 쓰려고 시도하는 경우 무시
-            pass
+        _safe_log("info", "🔄 Manual flush requested.")
         self._flush_buffer()
     
     def query_sensor_status(
@@ -553,12 +514,7 @@ class InfluxDBManager:
               |> keep(columns: ["device_id"])
             '''
             
-            try:
-                if logger.handlers:
-                    logger.debug(f"Querying sensor status from InfluxDB. Bucket: {bucket}")
-            except (ValueError, OSError, AttributeError, RuntimeError):
-                # 로거가 닫힌 파일에 쓰려고 시도하는 경우 무시
-                pass
+            _safe_log("debug", f"Querying sensor status from InfluxDB. Bucket: {bucket}")
             
             # 쿼리 실행
             result = self.query_api.query(query=query, org=settings.INFLUX_ORG)
@@ -578,15 +534,11 @@ class InfluxDBManager:
             total_count = active_count  # 임시: 활성 센서 수를 전체로 간주
             inactive_count = 0  # 현재는 비활성 센서를 구분할 수 없음
             
-            try:
-                if logger.handlers:
-                    logger.info(
-                        f"✅ Sensor status queried. "
-                        f"Active: {active_count}, Total: {total_count}"
-                    )
-            except (ValueError, OSError, AttributeError, RuntimeError):
-                # 로거가 닫힌 파일에 쓰려고 시도하는 경우 무시
-                pass
+            _safe_log(
+                "info",
+                f"✅ Sensor status queried. "
+                f"Active: {active_count}, Total: {total_count}"
+            )
             
             return {
                 "total_count": total_count,
@@ -596,15 +548,11 @@ class InfluxDBManager:
             }
             
         except Exception as e:
-            try:
-                if logger.handlers:
-                    logger.error(
-                        f"❌ Failed to query sensor status from InfluxDB. Error: {e}",
-                        exc_info=True
-                    )
-            except (ValueError, OSError, AttributeError, RuntimeError):
-                # 로거가 닫힌 파일에 쓰려고 시도하는 경우 무시
-                pass
+            _safe_log(
+                "error",
+                f"❌ Failed to query sensor status from InfluxDB. Error: {e}",
+                exc_info=True
+            )
             # 에러 발생 시 빈 결과 반환
             return {
                 "total_count": 0,
@@ -617,12 +565,7 @@ class InfluxDBManager:
         """
         리소스를 정리합니다.
         """
-        try:
-            if logger.handlers:
-                logger.info("🔄 Closing InfluxDB manager...")
-        except (ValueError, OSError, AttributeError, RuntimeError):
-            # 로거가 닫힌 파일에 쓰려고 시도하는 경우 무시
-            pass
+        _safe_log("info", "🔄 Closing InfluxDB manager...")
         
         # 백그라운드 스레드 종료 신호
         if hasattr(self, '_shutdown_flag'):
@@ -639,19 +582,9 @@ class InfluxDBManager:
         try:
             self.write_api.close()
             self.client.close()
-            try:
-                if logger.handlers:
-                    logger.info("✅ InfluxDB manager closed successfully.")
-            except (ValueError, OSError, AttributeError, RuntimeError):
-                # 로거가 닫힌 파일에 쓰려고 시도하는 경우 무시
-                pass
+            _safe_log("info", "✅ InfluxDB manager closed successfully.")
         except Exception as e:
-            try:
-                if logger.handlers:
-                    logger.error(f"❌ Error closing InfluxDB manager: {e}", exc_info=True)
-            except (ValueError, OSError, AttributeError, RuntimeError):
-                # 로거가 닫힌 파일에 쓰려고 시도하는 경우 무시
-                pass
+            _safe_log("error", f"❌ Error closing InfluxDB manager: {e}", exc_info=True)
 
 
 # -------------------------------------------------------------------
